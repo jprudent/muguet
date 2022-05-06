@@ -1,0 +1,7 @@
+{:deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        spootnik/unilog {:mvn/version "0.7.29"}
+        com.xtdb/xtdb-core {:mvn/version "1.20.0"}
+        com.xtdb/xtdb-rocksdb {:mvn/version "1.20.0"}
+        com.xtdb/xtdb-http-server {:mvn/version "1.20.0"}
+        metosin/malli {:mvn/version "0.8.4"}
+        integrant/integrant {:mvn/version "0.8.0"}}}
