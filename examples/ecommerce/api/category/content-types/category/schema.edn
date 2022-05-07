@@ -1,0 +1,19 @@
+; Schemas are using malli library internally.
+; Schemas are 100% syntax compatible with malli, without touching anything
+
+; Some metadata are expected to be provided in the schema, and
+; Muguet will enforce the validity of those metadata
+
+; Schemas are heavily inspired by Strapi schemas
+
+; It all starts with a map, because data, any data really, is a map
+[:map
+ {:collection/kind :collection
+  :collection/singular "category"
+  :collection/plural "categories"
+  :collection/display-name "Categories"
+  :collection/doc "A category is used to sort out products in the catalog"
+  :collection/icon "file-certificate"}
+ [:name [:string {:min 1}]
+  :slug [:uid ]]
+ ]
