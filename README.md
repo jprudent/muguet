@@ -46,9 +46,20 @@ beyond basic needs.
 
 Infinitite relations, reusable infinitely, no quirks (like in Strapi "components")
 
-Development workflow must be seamless (auto-reloading, ...)
+Development workflow must be seamless (auto-reloading, repl-driven, ...)
 
 Plugins & Plugin exentions (to improve base plugins)
 
 Provides other ports than http
 
+What about free form documents ?
+
+Inferring schemas
+
+Providing generators
+
+i18n & localization
+
+Deeply nested documents
+
+Write a schema converter from Strapi to Muguet

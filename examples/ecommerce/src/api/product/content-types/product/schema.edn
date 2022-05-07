@@ -1,0 +1,22 @@
+[:map
+ {:collection/kind :collection
+  :collection/singular "product"
+  :collection/plural "products"
+  :collection/display-name "Products"
+  :collection/doc "A product sold on the website"
+  :collection/icon "cubes"}
+ [:title [:string {:min 1}]]
+ [:description [:string {:min 1}]]
+ [:price [:float]]
+ [:image [:media {:media/allowed-types #{"images"}}]]
+ [:slug [:uid {:uid/target-field :title}]]
+ [:categories [:relations {:relation/arity :many-to-many
+                           :relation/target :api.category/category}]]
+ [:products [:relation {:relation/arity :many-to-many
+                        :relation/target :api.product/product
+                        :relation/inversed-by :categories}]]
+ ;; when dealing with multiple arity, use `:sequential`
+ ;; TODO strapi use a `repeatable` metadata, just see how it goes with :sequential
+ [:custom-fields [:sequential [:component {:component/target :api.custom-fields/custom-fields}]]]
+ ; default values can be specified at attribute level (native malli functionality)
+ [:status {:default :draft} [:enum [:draft :published]]]]

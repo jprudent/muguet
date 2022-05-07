@@ -5,6 +5,7 @@
 ; TODO should it be limited to those characters ? what about non-latin ?
 (def kebab [:re #"[a-z0-9-]+"])
 (def uid [:re #"^[A-Za-z0-9-_.~]*$"])
+(def icon [:re #"[a-z0-9-]+"])
 
 (def attributes-registry
   {:uid (m/-simple-schema {:type :uid, :pred string?})
@@ -24,16 +25,19 @@
          [:collection/singular {:doc "Used to generate the API routes"} kebab]
          [:collection/plural {:doc "Used to generate the API routes"} kebab]
          [:collection/display-name {:doc "Whenever this collection name must be displayed. Eg: Swagger"} text]
-         [:collection/doc {:optional true :doc "Explains what the collection really is."}]
-         [:collection/icon {:optional true :doc "FontAwesome icon name"} [:re #"[a-z0-9-]+"]]]
+         [:collection/doc {:optional true :doc "Explains what the collection really is."} text]
+         [:collection/icon {:optional true :doc "FontAwesome icon name"} icon]]
    ; TODO plural must really be different from singular ?
    [:fn {:error/message "The singular must be different than plural"}
     '(fn [{:keys [:collection/plural :collection/singular]}] (not= plural singular))]])
 
-(def relation-meta
+(def schema-name [:keyword])
+
+(def relation-type-meta
   [:map
    :relation/arity [{:doc "
 ## `many-to-many`
+A relation links 2 kinds of collection. Each element in a collection is an identity associated to a given value at a given time.
 `many-to-many` relationships are useful when:
 - an entry from content-type A is linked to many entries of content-type B,
 - and an entry from content-type B is also linked to many entries from content-type A.
@@ -53,11 +57,29 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
            :one-to-many
            :many-to-one
            :many-to-many]]
-   [:relation/target {:doc "
-   Schema the target content-type.
-   For instance, if you defined a api/product/content-types/product, that would be `:api.product/product`"}
+   [:relation/target {:doc "The target content-type schema's. For instance, if you defined a api/product/content-types/product, that would be `:api.product/product`"}
     ; TODO check that the target exists
-    [:keyword]]
+    schema-name]
    ; TODO Strapi define mappedBy and inversedBy, but I think a flag to describe relation ownership is more appropriate
+   ; TODO Do I really need this information ?
    ; TODO check that both ends are not owner
-   [:relation/owner? {:optional true} [:boolean]]])
+   #_[:relation/owner? {:optional true} [:boolean]]])
+
+(def component-type-metadata
+  [:map
+   [:component/target {:doc "The target component schema's. For instance, if you defined a components/custom/custom-fields, that would be `:api.custom/custom-fields"}]])
+
+;; A component is just a reusable schema in different contexts. A component instance is just a value that has no id.
+
+{:component/display-name "Custom fields"
+ :component/doc "Value that represents characteristics"
+ :component/icon "archway"}
+
+(def component-metadata
+  [:map
+   [:component/display-name {:doc "Whenever this component name must be displayed."} text text]
+   [:component/doc {:optional true :doc "Explains what the collection really is."} text]
+   [:componet/icon {:optional true :doc "FontAwesome icon name"} icon]])
+
+
+(defn )

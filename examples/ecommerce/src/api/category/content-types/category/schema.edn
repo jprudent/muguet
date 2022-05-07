@@ -1,0 +1,36 @@
+; Schemas are using malli library internally.
+; Schemas are 100% syntax compatible with malli, without touching anything
+
+; Schema is the central piece of Muguet. A lot of information are derived from schemas:
+; - documentation
+; - validation code
+; - API endpoint
+; - Swagger description
+; - Database schemas
+
+; Some metadata are expected to be provided in the schema, and
+; Muguet will enforce the validity of those metadata
+
+; Schemas are heavily inspired by Strapi schemas
+
+; It all starts with a map. A map is a datatructure blabla blabla
+; Because data, any data really, is a map, all your collection schemas must
+; start with `:map`.
+[:map
+ ; Then comes the collection metadata used to scafold
+ {:collection/kind :collection
+  :collection/singular "category"
+  :collection/plural "categories"
+  :collection/display-name "Categories"
+  :collection/doc "A category is used to sort out products in the catalog"
+  :collection/icon "file-certificate"}
+ ; Then comes the attribute list
+ ; By default all attributes are required
+ ; To make an optional attribute just set {optional true}
+ ; The syntax is the following:
+ ; [:attribute-name {attribute-metadata} [:type {type-metadata and constraints}]
+ ; the {attribute-metadata
+ [:name {:doc "category's name" :examples ["outfit"]} [:string {:min 1}]]
+ [:slug [:uid {:target-field :name}]]
+ [:products [:relation {:relation/arity :many-to-many
+                        :relation/target :api.product/product}]]]

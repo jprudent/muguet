@@ -1,0 +1,7 @@
+[:map
+ {:component/display-name "Custom fields"
+  :component/doc "generic characteristics"
+  :component/icon "archway"}
+ [:title [:string {:min 1}]]
+ [:required [:boolean]]
+ [:options {:optional true} [:string {:min 1}]]]
