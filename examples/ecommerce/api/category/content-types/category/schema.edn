@@ -14,6 +14,8 @@
   :collection/display-name "Categories"
   :collection/doc "A category is used to sort out products in the catalog"
   :collection/icon "file-certificate"}
- [:name [:string {:min 1}]
-  :slug [:uid ]]
- ]
+ [:name [:string {:min 1}]]
+ [:slug [:uid {:target-field :name}]]
+ [:products [:relation {:relation/arity :many-to-many
+                        :relation/target :api.product/product
+                        :relation/inversed-by :categories}]]]
