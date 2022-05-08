@@ -13,10 +13,9 @@
  [:categories [:relations {:relation/arity :many-to-many
                            :relation/target :api.category/category}]]
  [:products [:relation {:relation/arity :many-to-many
-                        :relation/target :api.product/product
-                        :relation/inversed-by :categories}]]
+                        :relation/target :api.product/product}]]
  ;; when dealing with multiple arity, use `:sequential`
  ;; TODO strapi use a `repeatable` metadata, just see how it goes with :sequential
- [:custom-fields [:sequential [:component {:component/target :api.custom-fields/custom-fields}]]]
+ [:custom-fields [:sequential [:component {:component/target :component.custom-fields/custom-fields}]]]
  ; default values can be specified at attribute level (native malli functionality)
  [:status {:default :draft} [:enum [:draft :published]]]]

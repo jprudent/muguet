@@ -1,4 +1,6 @@
-(ns schemas
+(ns muguet.meta-schemas
+  "meta-schemas for schemas (the one found under content-types directory)
+  they are used to check the basic form of schemas"
   (:require [malli.core :as m]))
 
 (def text [:string {:min 1}])
@@ -33,9 +35,12 @@
 
 (def schema-name [:keyword])
 
+;; TODO probably need an attribute-metadata schema for expressing constraints not built-in malli like uniqueness
+
 (def relation-type-meta
   [:map
-   :relation/arity [{:doc "
+   [:relation/arity
+    {:doc "
 ## `many-to-many`
 A relation links 2 kinds of collection. Each element in a collection is an identity associated to a given value at a given time.
 `many-to-many` relationships are useful when:
@@ -52,11 +57,8 @@ A relation links 2 kinds of collection. Each element in a collection is an ident
 They can be unidirectional or bidirectional. In unidirectional relationships, only one of the models can be queried with its linked item.
 ## `one-to-one`
 `one-to-one` relationships are useful when one entry can be linked to only one other entry.
-They can be unidirectional or bidirectional. In unidirectional relationships, only one of the models can be queried with its linked item."}]
-   [:enum [:one-to-one
-           :one-to-many
-           :many-to-one
-           :many-to-many]]
+They can be unidirectional or bidirectional. In unidirectional relationships, only one of the models can be queried with its linked item."}
+    [:enum :one-to-one :one-to-many :many-to-one :many-to-many]]
    [:relation/target {:doc "The target content-type schema's. For instance, if you defined a api/product/content-types/product, that would be `:api.product/product`"}
     ; TODO check that the target exists
     schema-name]
@@ -67,13 +69,11 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 
 (def component-type-metadata
   [:map
-   [:component/target {:doc "The target component schema's. For instance, if you defined a components/custom/custom-fields, that would be `:api.custom/custom-fields"}]])
+   [:component/target
+    {:doc "The target component schema's. For instance, if you defined a components/custom/custom-fields, that would be `:api.custom/custom-fields"}
+    schema-name]])
 
 ;; A component is just a reusable schema in different contexts. A component instance is just a value that has no id.
-
-{:component/display-name "Custom fields"
- :component/doc "Value that represents characteristics"
- :component/icon "archway"}
 
 (def component-metadata
   [:map
@@ -81,5 +81,24 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
    [:component/doc {:optional true :doc "Explains what the collection really is."} text]
    [:componet/icon {:optional true :doc "FontAwesome icon name"} icon]])
 
+(def attribute-type-schema
+  ;; TODO missing :or :and and probably other constructs that would be useful
+  [:or
+   [:tuple {:example [:relation {:relation/target :api.product/product}]}
+    [:enum  [:relation]] relation-type-meta]
+   [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+    [:enum [:component]] component-type-metadata]
+   [:tuple {:example [:string]} keyword?]
+   [:tuple {:example [:string {:min 1}]} keyword? map?]])
 
-(defn )
+(def attribute-schema
+  ;; an attibute is a pair
+  [:tuple keyword? attribute-type-schema])
+
+;; the description of schema as data
+(def meta-schema
+  [:cat
+   {:error/message "The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
+   [:enum :map]
+   collection-meta
+   [:* attribute-schema]])

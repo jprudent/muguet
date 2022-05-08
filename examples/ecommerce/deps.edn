@@ -1,0 +1,2 @@
+{:deps {muguet/muguet {:local/root "../.."}
+        org.xerial/sqlite-jdbc {:mvn/version "3.28.0"}}}

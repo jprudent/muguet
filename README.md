@@ -63,3 +63,5 @@ i18n & localization
 Deeply nested documents
 
 Write a schema converter from Strapi to Muguet
+
+Messages d'erreur i18n
