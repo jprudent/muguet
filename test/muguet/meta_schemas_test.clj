@@ -19,7 +19,7 @@
    [:categories [:relations #:relation{:arity :many-to-many, :target :api.category/category}]]
    [:products [:relation #:relation{:arity :many-to-many, :target :api.product/product}]]
    [:custom-fields [:sequential [:component #:component{:target :component.custom-fields/custom-fields}]]]
-   [:status {:default :draft} [:enum [:draft :published]]]])
+   [:status {:default :draft} [:enum :draft :published]]])
 
 (deftest meta-schema-test
-  (is (m/validate sut/meta-schema valid-schema)))
+  (is (= nil (m/explain sut/meta-schema valid-schema))))

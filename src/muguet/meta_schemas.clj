@@ -81,19 +81,33 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
    [:component/doc {:optional true :doc "Explains what the collection really is."} text]
    [:componet/icon {:optional true :doc "FontAwesome icon name"} icon]])
 
+(def attribute-options [:map])
+
 (def attribute-type-schema
   ;; TODO missing :or :and and probably other constructs that would be useful
-  [:or
-   [:tuple {:example [:relation {:relation/target :api.product/product}]}
-    [:enum  [:relation]] relation-type-meta]
-   [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
-    [:enum [:component]] component-type-metadata]
-   [:tuple {:example [:string]} keyword?]
-   [:tuple {:example [:string {:min 1}]} keyword? map?]])
+  [:schema {:registry {::attribute-type [:and
+                                         [:cat keyword? [:* any?]]
+                                         [:multi {:dispatch 'first}
+                                            [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
+                                                        [:enum :relation] relation-type-meta]]
+                                            [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+                                                           [:enum :component] component-type-metadata]]
+                                            [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+
+                                            [::m/default [:cat
+                                                          [:keyword {:example :string}]
+                                                          [:? {:example {:min 1}} map?]
+                                                          ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                                          [:* {:example [:enum :red :blue]} any?]]]]]}}
+   ::attribute-type])
 
 (def attribute-schema
-  ;; an attibute is a pair
-  [:tuple keyword? attribute-type-schema])
+  ;; TODO I would like to express it with
+  ;; [:cat keyword? [:? attribute-options] attribute-type-schema]
+  ;; but that's not working
+  [:or
+   [:tuple keyword? attribute-type-schema]
+   [:tuple keyword? attribute-options attribute-type-schema]])
 
 ;; the description of schema as data
 (def meta-schema
@@ -102,3 +116,6 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
    [:enum :map]
    collection-meta
    [:* attribute-schema]])
+
+
+;; todo vizualization https://github.com/metosin/malli#visualizing-schemas
