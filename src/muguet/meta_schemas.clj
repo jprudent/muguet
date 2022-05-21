@@ -81,24 +81,46 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
    [:component/doc {:optional true :doc "Explains what the collection really is."} text]
    [:componet/icon {:optional true :doc "FontAwesome icon name"} icon]])
 
+(def mime-type [:and
+                [:string {:example "type/subtype;parameter=value"}]
+                [:re #"\s+/\s+;\s+=.+"]])
+
+(def media-type-metadata
+  [:map
+   [:media/allowed-types {:doc "Kind of pre-built media types"}
+    [:set [:enum :image :video :archive :document]]]
+   [:media/allowed-mime-types {:doc "List of mime-types"
+                               :example #{"application/json"}}
+    [:set  mime-type]]])
+
 (def attribute-options [:map])
 
-(def attribute-type-schema
-  ;; TODO missing :or :and and probably other constructs that would be useful
-  [:schema {:registry {::attribute-type [:and
-                                         [:cat keyword? [:* any?]]
-                                         [:multi {:dispatch 'first}
-                                            [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
-                                                        [:enum :relation] relation-type-meta]]
-                                            [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
-                                                           [:enum :component] component-type-metadata]]
-                                            [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
 
-                                            [::m/default [:cat
-                                                          [:keyword {:example :string}]
-                                                          [:? {:example {:min 1}} map?]
-                                                          ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                                          [:* {:example [:enum :red :blue]} any?]]]]]}}
+(def malli-built-in-types
+  ;; some of the predicate are non serializable functions
+  (filter (some-fn keyword? symbol?)
+          (mapcat keys [(malli.core/predicate-schemas)
+                        (malli.core/type-schemas)
+                        (malli.core/sequence-schemas)
+                        (malli.core/base-schemas)])))
+
+(def attribute-type-schema
+  [:schema {:registry {::attribute-type [:and
+                                         [:cat (into [:enum] malli-built-in-types) [:* any?]]
+                                         [:multi {:dispatch 'first}
+                                          [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
+                                                      [:enum :relation] relation-type-meta]]
+                                          [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+                                                       [:enum :component] component-type-metadata]]
+                                          [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
+                                                   [:enum :media] media-type-metadata]]
+                                          [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+
+                                          [::m/default [:cat
+                                                        [:keyword {:example :string}]
+                                                        [:? {:example {:min 1}} map?]
+                                                        ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                                        [:* {:example [:enum :red :blue]} any?]]]]]}}
    ::attribute-type])
 
 (def attribute-schema
@@ -109,8 +131,9 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
    [:tuple keyword? attribute-type-schema]
    [:tuple keyword? attribute-options attribute-type-schema]])
 
+;; TODO get inspired with https://kwrooijen.github.io/gungnir/model.html
 ;; the description of schema as data
-(def meta-schema
+(def meta-coll-schema
   [:cat
    {:error/message "The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
    [:enum :map]

@@ -7,6 +7,8 @@
         metosin/malli {:mvn/version "0.8.4"}
         ;; -- malli companion for inlining functions
         org.babashka/sci {:mvn/version "0.3.5"}
+        ;; -- malli companion for generation values based on schemas
+        com.gfredericks/test.chuck {:mvn/version "0.2.10"}
 
         ;; kind of IoC container
         integrant/integrant {:mvn/version "0.8.0"}
