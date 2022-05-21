@@ -13,6 +13,7 @@
   {:uid (m/-simple-schema {:type :uid, :pred string?})
    :relation '???})
 
+;; TODO consider renaming collection aggregate-root to borrow from DDD
 (def collection-meta
   [:and [:map
          ; there are 2 kinds of collection
@@ -79,7 +80,7 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
   [:map
    [:component/display-name {:doc "Whenever this component name must be displayed."} text text]
    [:component/doc {:optional true :doc "Explains what the collection really is."} text]
-   [:componet/icon {:optional true :doc "FontAwesome icon name"} icon]])
+   [:component/icon {:optional true :doc "FontAwesome icon name"} icon]])
 
 (def mime-type [:and
                 [:string {:example "type/subtype;parameter=value"}]
@@ -87,13 +88,20 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 
 (def media-type-metadata
   [:map
-   [:media/allowed-types {:doc "Kind of pre-built media types"}
+   [:media/allowed-types {:doc "Kind of pre-built media types"
+                          :optional true}
     [:set [:enum :image :video :archive :document]]]
    [:media/allowed-mime-types {:doc "List of mime-types"
-                               :example #{"application/json"}}
-    [:set  mime-type]]])
+                               :example #{"application/json"}
+                               :optional true}
+    [:set mime-type]]])
 
 (def attribute-options [:map])
+
+(def uid-type-metadata
+  [:map
+   ;; todo verify that target field exists
+   [:uid/target-field keyword?]])
 
 
 (def malli-built-in-types
@@ -104,23 +112,31 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
                         (malli.core/sequence-schemas)
                         (malli.core/base-schemas)])))
 
-(def attribute-type-schema
-  [:schema {:registry {::attribute-type [:and
-                                         [:cat (into [:enum] malli-built-in-types) [:* any?]]
-                                         [:multi {:dispatch 'first}
-                                          [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
-                                                      [:enum :relation] relation-type-meta]]
-                                          [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
-                                                       [:enum :component] component-type-metadata]]
-                                          [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
-                                                   [:enum :media] media-type-metadata]]
-                                          [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+(def muguet-types #{:relation :component :media :uid})
 
-                                          [::m/default [:cat
-                                                        [:keyword {:example :string}]
-                                                        [:? {:example {:min 1}} map?]
-                                                        ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                                        [:* {:example [:enum :red :blue]} any?]]]]]}}
+(def attribute-type-schema
+  [:schema {:registry
+            {::attribute-type [:and
+                               [:cat (reduce into [:enum {:error/fn (fn [{:keys [value]} _]
+                                                                      ;; todo going further on error message : "did you mean blah blah ?"
+                                                                      (str "unknown type: `" value "`"))}]
+                                             [malli-built-in-types muguet-types]) [:* any?]]
+                               [:multi {:dispatch 'first}
+                                [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
+                                            [:enum :relation] relation-type-meta]]
+                                [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+                                             [:enum :component] component-type-metadata]]
+                                [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
+                                         [:enum :media] media-type-metadata]]
+                                [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
+                                       [:enum :uid] uid-type-metadata]]
+                                [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+
+                                [::m/default [:cat
+                                              [:keyword {:example :string}]
+                                              [:? {:example {:min 1}} map?]
+                                              ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                              [:* {:example [:enum :red :blue]} any?]]]]]}}
    ::attribute-type])
 
 (def attribute-schema
@@ -142,3 +158,7 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 
 
 ;; todo vizualization https://github.com/metosin/malli#visualizing-schemas
+
+;; todo for now, we use malli to validate the user collection schema,
+;; but I am not convinced by error messages
+(def validate (m/validator meta-coll-schema))

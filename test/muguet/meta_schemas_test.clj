@@ -1,9 +1,7 @@
 (ns muguet.meta-schemas-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.test :refer [deftest is]]
             [muguet.meta-schemas :as sut]
-            [malli.core :as m]
-            [malli.generator :as mg]
-            [malli.error :as me]))
+            [malli.dev.pretty :as mp]))
 
 (def valid-schema
   [:map
@@ -18,17 +16,11 @@
    [:price [:double]]
    [:image [:media #:media{:allowed-types #{:image}}]]
    [:slug [:uid #:uid{:target-field :title}]]
-   [:categories [:relations #:relation{:arity :many-to-many, :target :api.category/category}]]
+   [:categories [:relation #:relation{:arity :many-to-many, :target :api.category/category}]]
    [:products [:relation #:relation{:arity :many-to-many, :target :api.product/product}]]
    [:custom-fields [:sequential [:component #:component{:target :component.custom-fields/custom-fields}]]]
    [:status {:default :draft} [:enum :draft :published]]])
 
 (deftest meta-schema-test
-  (is (= nil (m/explain sut/meta-coll-schema valid-schema))))
-
-(deftest gen-schemas-test
-  (testing "schemas can be generated"
-    (is (not-empty (mg/generate sut/meta-coll-schema))))
-  (testing "generated schemas can be used to generate collection elements"
-    (let [coll-schema (mg/generate sut/meta-coll-schema)]
-      (is (not-empty (mg/generate coll-schema))))))
+  (is (sut/validate valid-schema))
+  (is (= nil (mp/explain sut/meta-coll-schema valid-schema))))
