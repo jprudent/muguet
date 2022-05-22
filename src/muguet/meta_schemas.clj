@@ -1,7 +1,9 @@
 (ns muguet.meta-schemas
   "meta-schemas for schemas (the one found under content-types directory)
   they are used to check the basic form of schemas"
-  (:require [malli.core :as m]))
+  (:require [malli.core :as m]
+            [clojure.string :as str]
+            [malli.error :as me]))
 
 (def text [:string {:min 1}])
 ; TODO should it be limited to those characters ? what about non-latin ?
@@ -75,6 +77,8 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
     schema-name]])
 
 ;; A component is just a reusable schema in different contexts. A component instance is just a value that has no id.
+;; It feels really weird to introduce that because Malli has the notion of repository that
+;; enables schema reuse in different contexts.
 
 (def component-metadata
   [:map
@@ -114,29 +118,40 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 
 (def muguet-types #{:relation :component :media :uid})
 
+(def all-types (into malli-built-in-types muguet-types))
+
+(defn- attr-type-error-fn [{:keys [value]} _]
+  ;; todo going further on error message : "did you mean blah blah ?"
+  (str "unknown type: `" value "`. Must be one of " (str/join ", " all-types)))
+
 (def attribute-type-schema
   [:schema {:registry
-            {::attribute-type [:and
-                               [:cat (reduce into [:enum {:error/fn (fn [{:keys [value]} _]
-                                                                      ;; todo going further on error message : "did you mean blah blah ?"
-                                                                      (str "unknown type: `" value "`"))}]
-                                             [malli-built-in-types muguet-types]) [:* any?]]
-                               [:multi {:dispatch 'first}
-                                [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
-                                            [:enum :relation] relation-type-meta]]
-                                [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
-                                             [:enum :component] component-type-metadata]]
-                                [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
-                                         [:enum :media] media-type-metadata]]
-                                [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
-                                       [:enum :uid] uid-type-metadata]]
-                                [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+            {::attr-type (into [:enum {:error/fn attr-type-error-fn}] all-types)
+             ::attribute-type [:orn
+                               [:simple-type ::attr-type]
+                               [:complex-type
+                                [:and
+                                 [:cat ::attr-type [:* any?]]
+                                 [:multi {:dispatch 'first}
+                                  [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
+                                              [:enum :relation] relation-type-meta]]
 
-                                [::m/default [:cat
-                                              [:keyword {:example :string}]
-                                              [:? {:example {:min 1}} map?]
-                                              ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                              [:* {:example [:enum :red :blue]} any?]]]]]}}
+                                  [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+                                               [:enum :component] component-type-metadata]]
+
+                                  [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
+                                           [:enum :media] media-type-metadata]]
+
+                                  [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
+                                         [:enum :uid] uid-type-metadata]]
+
+                                  [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+
+                                  [::m/default [:cat
+                                                ::attr-type
+                                                [:? {:example {:min 1}} map?]
+                                                ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                                [:* {:example [:enum :red :blue]} any?]]]]]]]}}
    ::attribute-type])
 
 (def attribute-schema
@@ -144,11 +159,34 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
   ;; [:cat keyword? [:? attribute-options] attribute-type-schema]
   ;; but that's not working
   [:or
+   ;; TODO we should enforce namespaced keywords for attribute.
    [:tuple keyword? attribute-type-schema]
    [:tuple keyword? attribute-options attribute-type-schema]])
 
 ;; TODO get inspired with https://kwrooijen.github.io/gungnir/model.html
 ;; the description of schema as data
+
+;; TODO add a ":muguet/unique?"
+
+;; TODO check there is a primary key. Unlike Strapi that adds the id itself
+;; Muguet let the user choose the internal id. Not sure it's a good idea though.
+;; Every aggregate-root must have some kind of natural id, or an artificial one
+;; that is unique and managed intentionally (aka "external id"). I think
+;; we can delegate identity management to Muguet, but let the developer choose
+;; other alternative id forms.
+;; Thinking more about that: Muguet must have its own internal and technical id
+;; that is optimized for persistance engine. This id must never be used.
+;; So users must provide a :muguet/primarey-key? that is used in APIs and can
+;; be of any form.
+;; This muguet/primary-key can be hold directly on the collection metadata.
+;; Any attribute which is unique can be used as primary-key (used in API)
+
+
+;; Introduce the concept of sequences to autogenerate values
+;; Once we got that, we can have a :muguet/default metadata that tells Muguet to
+;; generate value based on a sequence or a value generator
+
+;; TODO introduce "virtual" or "transient" attributes ? (it may be an applicative hack)
 (def meta-coll-schema
   [:cat
    {:error/message "The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
@@ -162,3 +200,5 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 ;; todo for now, we use malli to validate the user collection schema,
 ;; but I am not convinced by error messages
 (def validate (m/validator meta-coll-schema))
+
+(def explain (comp me/humanize (m/explainer meta-coll-schema)))

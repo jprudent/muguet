@@ -65,3 +65,8 @@ Deeply nested documents
 Write a schema converter from Strapi to Muguet
 
 Messages d'erreur i18n
+
+Schemas must be extensible with 3rd-party libs that provides rich types. For 
+instance EAN, or RDF types !
+
+see how it compares with stuff in there https://news.ycombinator.com/item?id=31469481

@@ -6,6 +6,7 @@
 
 (def object-schema
   [:map
+   ;; the id is not mixed with attributes to enforce the segregation between identity and value
    [:id pos-int?]
    [:attributes map?]
    meta-schema])
