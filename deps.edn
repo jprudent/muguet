@@ -17,4 +17,11 @@
         ;; -- logs without hassle
         spootnik/unilog {:mvn/version "0.7.29"}
         ;; -- filesystem stuff without hassle
-        babashka/fs {:mvn/version "0.1.6"}}}
+        babashka/fs {:mvn/version "0.1.6"}
+
+        ;; test only
+        ;; todo create a profile for those libs
+        nubank/matcher-combinators {:mvn/version "3.5.0"}
+        }}
+
+;; todo add a test profile and add the "test" directory as source dir

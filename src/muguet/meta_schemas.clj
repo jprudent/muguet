@@ -3,7 +3,8 @@
   they are used to check the basic form of schemas"
   (:require [malli.core :as m]
             [clojure.string :as str]
-            [malli.error :as me]))
+            [malli.error :as me]
+            [clojure.walk :as walk]))
 
 (def text [:string {:min 1}])
 ; TODO should it be limited to those characters ? what about non-latin ?
@@ -130,30 +131,36 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
              ::attribute-type [:orn
                                [:simple-type ::attr-type]
                                [:complex-type
-                                [:and
-                                 [:cat ::attr-type [:* any?]]
-                                 [:multi {:dispatch 'first}
-                                  [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
-                                              [:enum :relation] relation-type-meta]]
+                                [:multi {:dispatch (fn [x] (if (seq? x) (first x) ::type-error))}
+                                 [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
+                                             [:enum :relation] relation-type-meta]]
 
-                                  [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
-                                               [:enum :component] component-type-metadata]]
+                                 [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+                                              [:enum :component] component-type-metadata]]
 
-                                  [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
-                                           [:enum :media] media-type-metadata]]
+                                 [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
+                                          [:enum :media] media-type-metadata]]
 
-                                  [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
-                                         [:enum :uid] uid-type-metadata]]
+                                 [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
+                                        [:enum :uid] uid-type-metadata]]
 
-                                  [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
+                                 [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
 
-                                  [::m/default [:cat
-                                                ::attr-type
-                                                [:? {:example {:min 1}} map?]
-                                                ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                                [:* {:example [:enum :red :blue]} any?]]]]]]]}}
+                                 [::type-error [:sequential {:error/message "type can have simple form (eg: `:int`) or complex form (eg: `[:int {:min 2}]`)"} any?]]
+
+                                 [::m/default [:cat
+                                               ::attr-type
+                                               [:? {:example {:min 1}} map?]
+                                               ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                               [:* {:example [:enum :red :blue]} any?]]]]]]}}
    ::attribute-type])
 
+(comment
+  (m/explain [:multi {:dispatch (fn [x] (if (seq? x) (first x) ::error))}
+              [:a [:sequential keyword?]]
+              [::error [:sequential any?]]
+              [::m/default any?]]
+             1))
 (def attribute-schema
   ;; TODO I would like to express it with
   ;; [:cat keyword? [:? attribute-options] attribute-type-schema]
@@ -202,3 +209,14 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 (def validate (m/validator meta-coll-schema))
 
 (def explain (comp me/humanize (m/explainer meta-coll-schema)))
+
+(defn errors
+  "extract all error messages from explanation."
+  ;; todo do something smarter that correlate the error message with the key attribute
+  [explanation]
+  (-> (walk/postwalk
+        (fn [x] (when (string? x) (println x)))
+        explanation)
+      (with-out-str)
+      (str/split-lines)
+      (set)))

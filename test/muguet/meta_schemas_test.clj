@@ -3,7 +3,8 @@
             [muguet.usecase :as uc]
             [muguet.meta-schemas :as sut]
             [malli.dev.pretty :as mp]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [matcher-combinators.test]))
 
 (def valid-schema
   [:map
@@ -63,7 +64,8 @@
   ; The idea is to check that we have a comprehensible error message in those cases
   (testing "unknown simple type"
     (let [schema (conj empty-schema [:attr :int2])]
-      (is (str/starts-with? "Unknown type `:int2`" (sut/explain schema))))))
+      (is (match? #{#"unknown type: `:int2`" #"type can have simple form"}
+                  (sut/errors (sut/explain schema)))))))
 
 (deftest pokemon-card-schema-test
   (is (sut/validate uc/pokemon-card)))
