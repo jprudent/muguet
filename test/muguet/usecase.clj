@@ -32,7 +32,7 @@
 
    [:element [:ref ::elements]]
 
-   [:life-points pos-int?]
+   [:life-points 'pos-int?]
 
    [:attacks
     [:sequential

@@ -1,9 +1,58 @@
+Oh Oh Oh let me tell you about Muguet!
 
-## Schemas
+Muguet helps develop fullstack applications.
 
-Schemas are using malli internally.
+At the heart of Muguet
+is a declarative schema language.
+It helps express applicative model:
+identity and values, 
+constraints and invariants,
+relations with arity,
+documentation and meta-data.
 
-Some metadata are expected to be provided in the schema  
+From your rich schema,
+Data can be persisted and queried.
+Muguet is not an ORM.
+ORM stands for Object Relational Mapping.
+No _objects_ nor _relational_ algebra behind the scene!
+Backed by XTDB,
+It stores a graph of aggregates.
+
+Muguet is a time-traveler,
+You can query past, present and future data.
+
+From your rich schema,
+Muguet will generate:
+A model library (for browser and backend JS engines, Java and Clojure)
+APIs (REST, GraphQL, Datalog, name your poison),
+CLI tools & basic GUI,
+Data extractors,
+And documentations (textual, graphical & interactive)
+
+An application is not an island,
+Muguet is event based,
+It will integrate with your information system.
+
+An application is not an island,
+Muguet is fully internationalized.
+
+An application is not an island,
+Muguet can reuse code thanks to plugin system.
+
+Muguet is a dumb tool, 
+Your business logic is smart,
+So custom code is always possible.
+
+
+From the schema of the model, Muguet generates a lot 
+Persistence is backed by XTDB that can store data in different kind of database.
+You can choose the right tool for the right job.
+
+
+### TODO list demo
+
+
+
 
 ## Notes 
 
@@ -24,7 +73,7 @@ Multimedia library
 - provide image resizing capabilities
 
 Authentication:
-- give granular reponsabilities
+- give granular responsibilities
 
 Provide rich types, like blog post ?
 

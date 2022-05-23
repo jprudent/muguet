@@ -125,50 +125,12 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
   ;; todo going further on error message : "did you mean blah blah ?"
   (str "unknown type: `" value "`. Must be one of " (str/join ", " all-types)))
 
-(def attribute-type-schema
-  [:schema {:registry
-            {::attr-type (into [:enum {:error/fn attr-type-error-fn}] all-types)
-             ::attribute-type [:orn
-                               [:simple-type ::attr-type]
-                               [:complex-type
-                                [:multi {:dispatch (fn [x] (if (seq? x) (first x) ::type-error))}
-                                 [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
-                                             [:enum :relation] relation-type-meta]]
-
-                                 [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
-                                              [:enum :component] component-type-metadata]]
-
-                                 [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
-                                          [:enum :media] media-type-metadata]]
-
-                                 [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
-                                        [:enum :uid] uid-type-metadata]]
-
-                                 [:sequential [:tuple [:enum :sequential] [:ref ::attribute-type]]]
-
-                                 [::type-error [:sequential {:error/message "type can have simple form (eg: `:int`) or complex form (eg: `[:int {:min 2}]`)"} any?]]
-
-                                 [::m/default [:cat
-                                               ::attr-type
-                                               [:? {:example {:min 1}} map?]
-                                               ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                               [:* {:example [:enum :red :blue]} any?]]]]]]}}
-   ::attribute-type])
-
 (comment
   (m/explain [:multi {:dispatch (fn [x] (if (seq? x) (first x) ::error))}
               [:a [:sequential keyword?]]
               [::error [:sequential any?]]
               [::m/default any?]]
              1))
-(def attribute-schema
-  ;; TODO I would like to express it with
-  ;; [:cat keyword? [:? attribute-options] attribute-type-schema]
-  ;; but that's not working
-  [:or
-   ;; TODO we should enforce namespaced keywords for attribute.
-   [:tuple keyword? attribute-type-schema]
-   [:tuple keyword? attribute-options attribute-type-schema]])
 
 ;; TODO get inspired with https://kwrooijen.github.io/gungnir/model.html
 ;; the description of schema as data
@@ -195,11 +157,49 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
 
 ;; TODO introduce "virtual" or "transient" attributes ? (it may be an applicative hack)
 (def meta-coll-schema
-  [:cat
-   {:error/message "The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
-   [:enum :map]
-   collection-meta
-   [:* attribute-schema]])
+  [:schema
+   {:registry {::coll-schema [:cat
+                              {:error/message "The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
+                              [:= :map]
+                              collection-meta
+                              [:* ::attribute-schema]]
+               ::attribute-schema [:or
+                                   ;; todo we should enforce namespaced keywords for attribute.
+                                   [:tuple keyword? [:ref ::attribute-type]]
+                                   [:tuple keyword? attribute-options [:ref ::attribute-type]]]
+               ::attr-type (into [:enum {:error/fn attr-type-error-fn}] all-types)
+               ::attribute-type [:orn
+                                 [:simple-type ::attr-type]
+                                 [:complex-type
+                                  [:multi {:dispatch (fn [x] (if (seq? x) (first x) ::type-error))}
+                                   [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
+                                               [:= :relation] relation-type-meta]]
+
+                                   [:component [:tuple {:example [:component {:component/target :component.custom-fields/custom-fields}]}
+                                                [:= :component] component-type-metadata]]
+
+                                   [:media [:tuple {:example [:media {:media/allowed-types #{"images"}}]}
+                                            [:= :media] media-type-metadata]]
+
+                                   [:uid [:tuple {:example [:uid {:uid/target-field :title}]}
+                                          [:= :uid] uid-type-metadata]]
+
+                                   [:map [:cat {:example [:map [:x :int] [:y :int]]}
+                                          [:= :map]  [:* [:or
+                                                                   ;; todo we should enforce namespaced keywords for attribute.
+                                                                   [:tuple keyword? [:ref ::attribute-type]]
+                                                                   [:tuple keyword? attribute-options [:ref ::attribute-type]]]]]]
+
+                                   [:sequential [:tuple [:= :sequential] [:ref ::attribute-type]]]
+
+                                   [::type-error [:sequential {:error/message "type can have simple form (eg: `:int`) or complex form (eg: `[:int {:min 2}]`)"} any?]]
+
+                                   #_[::m/default [:cat
+                                                 ::attr-type
+                                                 [:? {:example {:min 1}} map?]
+                                                 ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                                 [:* {:example [:enum :red :blue]} any?]]]]]]}}
+   [:ref ::coll-schema]])
 
 
 ;; todo vizualization https://github.com/metosin/malli#visualizing-schemas
