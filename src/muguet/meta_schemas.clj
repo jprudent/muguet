@@ -171,7 +171,7 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
                ::attribute-type [:orn
                                  [:simple-type ::attr-type]
                                  [:complex-type
-                                  [:multi {:dispatch (fn [x] (if (seq? x) (first x) ::type-error))}
+                                  [:multi {:dispatch (fn [x] (if (sequential? x) (first x) ::type-error))}
                                    [:relation [:tuple {:example [:relation {:relation/target :api.product/product}]}
                                                [:= :relation] relation-type-meta]]
 
@@ -185,20 +185,17 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
                                           [:= :uid] uid-type-metadata]]
 
                                    [:map [:cat {:example [:map [:x :int] [:y :int]]}
-                                          [:= :map]  [:* [:or
-                                                                   ;; todo we should enforce namespaced keywords for attribute.
-                                                                   [:tuple keyword? [:ref ::attribute-type]]
-                                                                   [:tuple keyword? attribute-options [:ref ::attribute-type]]]]]]
+                                          [:= :map]  [:* ::attribute-schema]]]
 
                                    [:sequential [:tuple [:= :sequential] [:ref ::attribute-type]]]
 
                                    [::type-error [:sequential {:error/message "type can have simple form (eg: `:int`) or complex form (eg: `[:int {:min 2}]`)"} any?]]
 
-                                   #_[::m/default [:cat
-                                                 ::attr-type
-                                                 [:? {:example {:min 1}} map?]
-                                                 ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                                 [:* {:example [:enum :red :blue]} any?]]]]]]}}
+                                   [::m/default [:cat
+                                                   ::attr-type
+                                                   [:? {:example {:min 1}} map?]
+                                                   ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                                   [:* {:example [:enum :red :blue]} any?]]]]]]}}
    [:ref ::coll-schema]])
 
 
