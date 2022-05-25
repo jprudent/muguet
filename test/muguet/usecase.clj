@@ -45,11 +45,11 @@
 
       [:damage
        {:doc "Damages caused to enemy by this attack"}
-       pos-int?]
+       'pos-int?]
 
       [:energies
        {:doc "Energies spent for this attack"
         :example [[1 :fire] [2 :any]]}
        [:catn
-        [:number-of-energy pos-int?]
+        [:number-of-energy 'pos-int?]
         [:enery-type [:or [:enum :any] ::elements]]]]]]]])
