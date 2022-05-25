@@ -185,17 +185,22 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
                                           [:= :uid] uid-type-metadata]]
 
                                    [:map [:cat {:example [:map [:x :int] [:y :int]]}
-                                          [:= :map]  [:* ::attribute-schema]]]
+                                          [:= :map] [:? map?] [:* ::attribute-schema]]]
 
-                                   [:sequential [:tuple [:= :sequential] [:ref ::attribute-type]]]
+                                   [:sequential [:orn
+                                                 ;; todo can't use :ref in a sexp, so I have to rely on :orn
+                                                 [:no-meta [:tuple {:example [:sequential :int]}
+                                                            [:= :sequential] [:ref ::attribute-type]]]
+                                                 [:with-meta [:tuple {:example [:sequential :int]}
+                                                              [:= :sequential] map? [:ref ::attribute-type]]]]]
 
                                    [::type-error [:sequential {:error/message "type can have simple form (eg: `:int`) or complex form (eg: `[:int {:min 2}]`)"} any?]]
 
                                    [::m/default [:cat
-                                                   ::attr-type
-                                                   [:? {:example {:min 1}} map?]
-                                                   ;; todo I could go further, but that would be validating a malli schema. where to stop ?
-                                                   [:* {:example [:enum :red :blue]} any?]]]]]]}}
+                                                 ::attr-type
+                                                 [:? {:example {:min 1}} map?]
+                                                 ;; todo I could go further, but that would be validating a malli schema. where to stop ?
+                                                 [:* {:example [:enum :red :blue]} any?]]]]]]}}
    [:ref ::coll-schema]])
 
 

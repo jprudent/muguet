@@ -64,6 +64,10 @@
     (let [schema (conj empty-schema [:attr [:sequential [:map
                                                          [:x 'double?]
                                                          [:y 'double?]]]])]
+      (is (sut/validate schema))))
+  (testing "the attribute can be a sequence of maps with metadata"
+    (let [schema (conj empty-schema [:attr [:sequential {:max 2}
+                                            [:tuple [:int {:min 0}] [:int {:min 0}]]]])]
       (is (sut/validate schema)))))
 
 (deftest attributes-error-test
@@ -82,6 +86,11 @@
     ;; `[:map :int]` is non sense
     (let [schema (conj empty-schema [:attr [:map :int]])]
       (is (match? #{#"unknown type: `\[:map :int\]`"}
+                  (sut/errors (sut/explain schema))))))
+  (testing "unknown type in sub sub map"
+    ;; `[:map :int]` is non sense
+    (let [schema (conj empty-schema [:attr [:map [:attr [:map [:attr [:map [:attr :int2]]]]]]])]
+      (is (match? #{#"unknown type: `\[:map \[:attr \[:map \[:attr \[:map \[:attr :int2]\]\]\]\]\]`"}
                   (sut/errors (sut/explain schema)))))))
 
 (deftest pokemon-card-schema-test
