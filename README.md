@@ -119,3 +119,31 @@ Schemas must be extensible with 3rd-party libs that provides rich types. For
 instance EAN, or RDF types !
 
 see how it compares with stuff in there https://news.ycombinator.com/item?id=31469481
+
+
+data mapper https://en.wikipedia.org/wiki/Data_mapper_pattern VS active record :
+
+Active record is hard coupling objects with relational model (tables, column, ...). 
+This is quite good for prototyping quick, small, and short living applications. 
+It doesn't scale with complexity.
+
+Data mapper decouples model and persistance
+and is what you need for application growth.
+
+But if in your app you don't have "objects" but data 
+and your backend is a graph,
+why active record wouldn't be suitable for complex app ?
+There is a perfect fit between a grape of data and a graph,
+But it always come to performance.
+And performance always come to destructuration.
+You would destructure your graph to gain performance,
+And your model would start to drift away from your persistance.
+And your model starts to drift away from your business
+And your model starts to have that gangrenous anemy.
+
+
+## An ORM for the rest of us
+
+Browsing HN, people have great technical challenge,
+Mos of the time, I do dumb things.
+I want a dumb tool to do dumb things.
