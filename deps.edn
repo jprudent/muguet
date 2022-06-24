@@ -4,7 +4,7 @@
         com.xtdb/xtdb-core {:mvn/version "1.20.0"}
 
         ;; data validation
-        metosin/malli {:mvn/version "0.8.4"}
+        metosin/malli {:mvn/version "0.8.8"}
         ;; -- malli companion for inlining functions
         org.babashka/sci {:mvn/version "0.3.5"}
         ;; -- malli companion for generation values based on schemas
@@ -23,6 +23,6 @@
         ;; todo create a profile for those libs
         nubank/matcher-combinators {:mvn/version "3.5.0"}}
 
- :aliases {:test {:main-opts ["-m" "kaocha.runner"]
-                  :extra-paths ["test"]
-                  :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}}}}}
+ :aliases {:test {:extra-paths ["test"]}
+           :kaocha {:main-opts ["-m" "kaocha.runner"]
+                    :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}}}}}

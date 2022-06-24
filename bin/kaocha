@@ -2,4 +2,4 @@
 
 # shortcut to run tests
 
-clojure -M:test "$@"
+clojure -M:kaocha "$@"
