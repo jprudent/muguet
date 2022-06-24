@@ -24,4 +24,5 @@
         nubank/matcher-combinators {:mvn/version "3.5.0"}}
 
  :aliases {:test {:main-opts ["-m" "kaocha.runner"]
-                   :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}}}}}
+                  :extra-paths ["test"]
+                  :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}}}}}
