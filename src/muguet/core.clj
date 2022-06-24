@@ -1,5 +1,5 @@
 (ns muguet.core
-  (:require [malli.util :as mu]
+  (:require [muguet.schema :as schema]
             [malli.core :as m]))
 
 (def meta-schema [:meta {:optional true} map?])
@@ -24,7 +24,7 @@
   [:map
    ;; inspired by https://docs.strapi.io/developer-docs/latest/developer-resources/error-handling.html#rest-errors
    [:error [:map
-            [:status [:enum [:bad-request :conflict :not-exist :exception]]
+            [:status [:enum [:invalid :conflict :not-exist :exception]]
              :message [:string {:min 1}]
              :details map?]]]
    meta-schema])
@@ -42,15 +42,29 @@
   attribute values may be missing. But that's ok, it's tolerated. At that point
   of the CRUD lifecycle every attribute are optional.
   If some attributes are provided, they are checked against their respective schema."
+
   ;; TODO implement "required" attributes for birth time
   ;;      it's different from required/optional attribute schema
   ;;      may be name it "mandatory" or "enforced"
-  [parameters {:keys [schema] :as collection-system}]
+
+  [attributes {:keys [schema] :as collection-system}]
   {:post [(m/validate api-return-schema %)]}
-  (mu/keys)
-  )
+  (let [optional-schema (schema/optional schema)]
+    (if (schema/validate optional-schema attributes)
+      {:data (db/insert attributes collection-system)}
+      {:error {:status :invalid
+               ;; TODO the error message must be more precise, explaining
+               ;;      which attributes, and why
+               :message "Invalid attributes"
+               ;; TODO give complete coordinate of the error
+               :details {}}})))
 
 ;; For those unconvinced by the metaphor
 (def create hatch)
 (defn find-one [id collection-system])
-(defn delete [id collection-system])
+
+
+(defn destroy
+  ";; There is no \"delete\" but a \"destroy\" to enforce the destructive outcome
+  this operation. User can implement a non-destructive method of his own."
+  [id collection-system])

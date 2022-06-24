@@ -30,7 +30,6 @@
         (assoc schemas schema-id schema)))
     {} (fs/glob project-dir "api/**/schema.edn")))
 
-(defn validate-schemas)
 (defn start!
   "Start the systems. It will use an in memory persistence backend by default."
   [dir]

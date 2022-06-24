@@ -21,7 +21,7 @@
 
         ;; test only
         ;; todo create a profile for those libs
-        nubank/matcher-combinators {:mvn/version "3.5.0"}
-        }}
+        nubank/matcher-combinators {:mvn/version "3.5.0"}}
 
-;; todo add a test profile and add the "test" directory as source dir
+ :aliases {:test {:main-opts ["-m" "kaocha.runner"]
+                   :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}}}}}

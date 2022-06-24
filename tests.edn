@@ -1,0 +1,3 @@
+;; doc: https://cljdoc.org/d/lambdaisland/kaocha/1.68.1059/doc/3-configuration
+#kaocha/v1 {:plugins [:kaocha.plugin/print-invocations
+                      :kaocha.plugin/notifier]}

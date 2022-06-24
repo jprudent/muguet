@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+# shortcut to run tests
+
+clojure -M:test "$@"
