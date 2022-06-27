@@ -6,6 +6,15 @@
             [muguet.meta-schemas :as meta]
             [muguet.schema :as schema]))
 
+(defn ->event
+  [event-type {:keys [id] :as aggregate}]
+  ;; todo specify type of id
+  {:malli/schema [:=> [:qualified-keyword [:map [:id any?]]]]}
+  {:header {:event-type event-type
+            :event-version 1
+            :aggregate-id id}
+   :body aggregate})
+
 ;; TODO rename initialize ?
 (defn hatch
   "Creation is always a weird time. Think how a baby was born. Does he have
@@ -20,12 +29,19 @@
   ;;      it's different from required/optional attribute schema
   ;;      may be name it "mandatory" or "enforced"
 
-  [attributes {:keys [schema] :as _collection-system}]
+  [attributes {:keys [schema id-provider aggregate-name] :as collection-system}]
   #_{:post [(m/validate core/api-return-schema %)]}
-  {:malli/schema [:=> [map? [:map [:schema meta/meta-coll-schema]]] core/api-return-schema]}
-  (let [optional-schema (schema/optional schema)]
-    (if (schema/validate optional-schema attributes)
-      {:data {} #_(db/insert attributes collection-system)}
+  {:malli/schema [:=> [[:maybe map?] [:map [:schema meta/meta-coll-schema
+                                            :id-provider {:doc "injection of any strategy for id generation"} fn?]]]
+                  core/api-return-schema]}
+  (let [optional-schema (schema/optional schema)
+        id (id-provider attributes)
+        aggregate (assoc attributes :id id)]
+    (if (schema/validate optional-schema aggregate)
+      [{:event (->event (keyword (name aggregate-name) "hatched") aggregate)
+        :on-aggregate nil
+        :aggregate aggregate
+        :event-history nil}]
       {:error {:status :invalid
                ;; TODO the error message must be more precise, explaining
                ;;      which attributes, and why

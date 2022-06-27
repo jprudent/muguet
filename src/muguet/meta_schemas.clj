@@ -1,10 +1,10 @@
 (ns muguet.meta-schemas
   "meta-schemas for schemas (the one found under content-types directory)
   they are used to check the basic form of schemas"
-  (:require [malli.core :as m]
-            [clojure.string :as str]
-            [malli.error :as me]
-            [clojure.walk :as walk]))
+  (:require [clojure.string :as str]
+            [clojure.walk :as walk]
+            [malli.core :as m]
+            [malli.error :as me]))
 
 (def text [:string {:min 1}])
 ; TODO should it be limited to those characters ? what about non-latin ?

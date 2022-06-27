@@ -7,6 +7,6 @@ Status of the project: design phase
 
 ## Tests
 
-Run `bin/kaocha`. 
+Run `bin/kaocha`.
 
 Append `--watch` for watch mode.

@@ -16,5 +16,5 @@
     (is (mu/equals (m/schema [:map [:foo {:optional true} :string]])
                    (sut/optional [:map [:foo {:optional true} :string]]))))
   (testing "nested map are not set optional"
-    (is (mu/equals (m/schema [:map [:foo [:map {:optional true} [:bar :int]]]])
+    (is (mu/equals (m/schema [:map [:foo {:optional true} [:map [:bar :int]]]])
                    (sut/optional [:map [:foo [:map [:bar :int]]]])))))
