@@ -21,21 +21,29 @@
 ;; fire family, such command will emit as many events as there is fire
 ;; pokemon cards.
 
-
 ;; todo do that in an initialization code
 ;; todo hard coded kw
-(defonce _ (db/register-event-handler (keyword (name :pokemon-card) "hatched")
-                                      ;; for now this is generic providing we added the id in the command,
-                                      ;; which seems reasonable
-                                      ;; todo provide a mechanism to let user define its own transactions
-                                      '(fn [db-ctx event-ctx]
-                                         (let [db (xtdb.api/db db-ctx)
-                                               id (-> event-ctx :aggregate :id)
-                                               existing-aggregate (muguet.db/fetch-aggregate db id)]
-                                           (if (= existing-aggregate (:on-aggregate event-ctx))
-                                             [[::xt/put (assoc (:aggregate event-ctx) :xt/id (muguet.db/id->xt-aggregate-id id))]
-                                              ;; event history can be retrieved from the history of this document
-                                              [::xt/put (assoc (:event event-ctx) :xt/id (muguet.db/id->xt-last-event-id id))]])))))
+(defn register-event-handlers
+  []
+  (db/register-event-handler (keyword (name :pokemon-card) "hatched")
+                             ;; for now this is generic providing we added the id in the command,
+                             ;; which seems reasonable
+                             ;; todo provide a mechanism to let user define its own transactions
+                             '(fn [db-ctx event-ctx]
+                                (prn (keys db-ctx) (:indexing-tx db-ctx))
+                                (let [db (xtdb.api/db db-ctx)
+                                      id (-> event-ctx :aggregate :id)
+                                      existing-aggregate (muguet.db/fetch-aggregate db id)]
+                                  (if (= existing-aggregate (:on-aggregate event-ctx))
+                                    [[::xt/put (assoc (:aggregate event-ctx)
+                                                 :xt/id (muguet.db/id->xt-aggregate-id id)
+                                                 :stream-version (:indexing-tx db-ctx))]
+                                     ;; event history can be retrieved from the history of this document
+                                     [::xt/put (assoc (:event event-ctx)
+                                                 :xt/id (muguet.db/id->xt-last-event-id id)
+                                                 :stream-version (:indexing-tx db-ctx))]]
+                                    (throw (ex-info "version mismatched" {:actual existing-aggregate
+                                                                          :expected (:on-aggregate event-ctx)})))))))
 
 ;; TODO rename initialize ? or identify
 (defn hatch
@@ -58,12 +66,25 @@
   (let [optional-schema (schema/optional schema)
         id (id-provider attributes)
         aggregate (assoc attributes :id id)
-        event-ctx [{:on-aggregate nil
-                    :event (->event (keyword (name aggregate-name) "hatched") aggregate)
-                    :aggregate aggregate}]]
+        events-ctx [{:on-aggregate nil
+                     :event (->event (keyword (name aggregate-name) "hatched") aggregate)
+                     :aggregate aggregate}]]
     (if (schema/validate optional-schema aggregate)
-      (do (mapv db/insert! event-ctx)
-          event-ctx)
+      ;; fixme there is serious flaw here where the events are not inserted atomically
+      ;;       solution is to insert the whole vector in the same transaction
+      ;;       but we got same version for 2 different aggregate/last-event hummmmmm
+      (mapv (fn [event-ctx]
+              (let [version (db/insert! event-ctx)
+                    event (db/fetch-last-event-version version id)
+                    aggregate (db/fetch-aggregate-version version id)]
+                (if (and event aggregate)
+                  {:on-aggregate (:on-aggregate event-ctx)
+                   :event event
+                   :aggregate aggregate}
+                  {:error {:status :bad-request
+                           :message "couldn't apply events, conditions not met"
+                           :details "todo: get the exception from the transaction fn ?"}})))
+            events-ctx)
       {:error {:status :invalid
                ;; TODO the error message must be more precise, explaining
                ;;      which attributes, and why

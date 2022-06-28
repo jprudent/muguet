@@ -2,14 +2,37 @@
   (:require [xtdb.api :as xt])
   (:import (java.time Duration)))
 
-(defonce node (atom (xt/start-node {})))
+(defonce node (atom nil))
+
+#_(xt/listen @node {::xt/event-type ::xt/indexed-tx} prn)
+
+(defn insert!
+  "**blocking** insert of the event context. Returns the aggregate version."
+  [event-ctx]
+  (xt/await-tx
+    @node
+    (xt/submit-tx @node [[::xt/fn (-> event-ctx :event :type) event-ctx]]))
+
+  ;; this doesn't work because a promise is not serializable
+  #_(let [ret (promise)]
+      (xt/submit-tx @node [[::xt/fn (-> event-ctx :event :type) event-ctx ret]])))
 
 (def event-ctx
   [:map
    [:event {:doc "the event to apply"} :map]
-   [:on-aggregate {:doc "the aggregate the event is applied upon"} :map]
-   [:aggregate {:doc "the resulting aggregate after applying the event"} :map]])
+   ;; todo "on-aggregate" is a confusing name that recall some kink of callback
+   [:on-aggregate {:doc "The aggregate the event is applied upon.
+    This is how Optimistic Concurrency Control is implemented.
+    on-aggregate can be provided by the end user if he wants to solve concurrency issues itself.
+    on-aggregate can be retrieved automatically and the action could be retried on up to date aggregate"}
+    ;; TODO instead of the whole aggregate, we could provide the aggregate version
+    :map]
+   [:aggregate {:doc "the resulting aggregate after applying the event"}
+    [:map
+     [:id {:doc "The domain id (not the technical one), must be serializable as string because it is derived to construct the technical id"} any?]
+     [:version {:doc "An aggregate has a - string serialized - version that changes each time an event is applied on it. Versions have a relation of order but must be opaque for client. They can be used as HTTP ETag"} :string]]]])
 
+;; todo make an async version
 (defn register-event-handler
   [event-type f]
   ;; todo check f is a LIST (source code fn) with proper arguments
@@ -24,39 +47,45 @@
                                                      :xt/fn f}]])
                (Duration/ofSeconds 1)))
 
-;; todo make an async version
-(defn insert!
-  [event-ctx]
-  (xt/await-tx
-    @node
-    (xt/submit-tx @node [[::xt/fn (-> event-ctx :event :type) event-ctx]]))
-
-  #_(let [value (assoc document :xt/id (:id document))]
-      ;; the insertion is done in 2 phases
-      ;; phase 1: check the aggregate exists at the given version (on-aggregate)
-      ;;          and call transaction function :store-event-fn
-      ;; phase 2: :store-event-fn put:
-      ;; - the aggregate
-      ;; - the last event
-      ;; - update the event history
-      ;; Rationale behind those 2 phases is that I don't want to pollute the
-      ;; document log with document that are not meant to be indexed (if match
-      ;; fails, the document will appear in the document log)
-      (assoc value :version (xt/submit-tx @node [[::xt/match] [::xt/put value]]))))
-
 (defn id->xt-aggregate-id [id] (str id "_aggregate"))
 (defn id->xt-last-event-id [id] (str id "_last_event"))
+
+;; todo all this functions should support pagination and ordering
 
 (defn fetch-aggregate
   ; The DB must be provided because it's the context it provides a context
   ; If it was not required, it would have been fetch from the node without any
-  ; kind of context
+  ; kind of context.
+  ; todo could also use version as a query context
   "Utility function that fetch an aggregate by id"
   [db id]
   (dissoc (xt/entity db (id->xt-aggregate-id id)) :xt/id))
 
 (defn fetch-event-history
   "Retrieve the all the events that have been applied on the aggregate"
+  ;; todo we probably want to retrieve slices of event history to rebuild
+  ;;      from snapshots.
   [db id]
-  (map #_identity (fn [{:keys [:xtdb.api/doc]}] (dissoc doc :xt/id))
-                  (xt/entity-history db (id->xt-last-event-id id) :asc {:with-docs? true})))
+  (map (fn [{:keys [:xtdb.api/doc]}] (dissoc doc :xt/id))
+       (xt/entity-history db (id->xt-last-event-id id) :asc {:with-docs? true})))
+
+(defn fetch-last-event-version
+  "Fetch last event holding the version"
+  [stream-version id]
+  (dissoc (ffirst (xt/q (xt/db @node)
+                        '{:find [(pull ?last-event [*])]
+                          :in [xt-id version]
+                          :where [[?last-event :xt/id xt-id]
+                                  [?last-event :stream-version version]]}
+                        (id->xt-last-event-id id) stream-version))
+          :xt/id))
+
+(defn fetch-aggregate-version
+  [stream-version id]
+  (dissoc (ffirst (xt/q (xt/db @node)
+                        '{:find [(pull ?last-event [*])]
+                          :in [[xt-id version]]
+                          :where [[?last-event :xt/id xt-id]
+                                  [?last-event :stream-version version]]}
+                        [(id->xt-aggregate-id id) stream-version]))
+          :xt/id))
