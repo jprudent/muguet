@@ -47,18 +47,13 @@
            ;; put an error document so error can be retrieved from command
            ;; this could also be implemented with a "registy" of promises but
            ;; that's a state to maintain
-           (do (prn "!!!!!!" [[::xt/put {:xt/id (muguet.db/id->xt-error-id id)
-                                         :stream-version (:indexing-tx db-ctx)
-                                         :status ::mug/not-found
-                                         :message "the specified aggregate version couldn't be find"
-                                         :details {:actual existing-aggregate
-                                                   :expected (:on-aggregate event-ctx)}}]])
-               [[::xt/put {:xt/id (muguet.db/id->xt-error-id id)
-                           :stream-version (:indexing-tx db-ctx)
-                           :status ::mug/not-found
-                           :message "the specified aggregate version couldn't be find"
-                           :details {:actual existing-aggregate
-                                     :expected (:on-aggregate event-ctx)}}]]))))))
+           [[::xt/put {:xt/id (muguet.db/id->xt-error-id id)
+                       :stream-version (:indexing-tx db-ctx)
+                       ;; todo change error message: this is a conflict
+                       :status ::mug/not-found
+                       :message "the specified aggregate version couldn't be find"
+                       :details {:actual existing-aggregate
+                                 :expected (:on-aggregate event-ctx)}}]])))))
 
 ;; TODO rename initialize ? or identify
 (defn hatch

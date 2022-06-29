@@ -47,6 +47,12 @@
 
 ;; todo all this functions should support pagination and ordering
 
+;; todo apply this to all functions
+(defn clean-doc
+  "Remove purely technical attribute to have a clean API"
+  [doc]
+  (dissoc doc :xt/id))
+
 (defn fetch-aggregate
   ; The DB must be provided because it's the context it provides a context
   ; If it was not required, it would have been fetch from the node without any
@@ -87,10 +93,11 @@
 
 (defn fetch-error-version
   [stream-version id]
-  (dissoc (ffirst (xt/q (xt/db @node)
-                        '{:find [(pull ?error [*])]
-                          :in [[xt-id version]]
-                          :where [[?error :xt/id xt-id]
-                                  [?error :stream-version version]]}
-                        [(id->xt-error-id id) stream-version]))
-          :xt/id))
+  (with-open [cursor (xt/open-entity-history (xt/db @node) (id->xt-error-id id) :asc
+                                             {:with-docs? true
+                                              :with-corrections? true
+                                              :start-tx-id (:tx-id stream-version)})]
+    (let [history (iterator-seq (:lazy-seq-iterator cursor))]
+      (clean-doc (some (fn [{:keys [:xtdb.api/doc]}]
+                         (when (= stream-version (:stream-version doc)) doc))
+                       history)))))

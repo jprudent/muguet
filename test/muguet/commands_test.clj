@@ -1,12 +1,14 @@
 (ns muguet.commands-test
   "Those tests are using the real implementation of database through an in-memory instance of XTDB"
   (:require [clojure.test :refer :all]
+            [diehard.core :as dh]
             [muguet.api :as mug]
             [muguet.commands :as sut]
             [muguet.db :as db]
             [muguet.main :as main]
             [muguet.usecase :as uc]
-            [xtdb.api :as xt]))
+            [xtdb.api :as xt])
+  (:import (java.util.concurrent CountDownLatch ExecutorService Executors)))
 
 (def some-id "some fake id")
 (def id-provider (constantly some-id))
@@ -16,22 +18,21 @@
                      :id-provider id-provider})
 
 (defn blocking-fetch
-  "This implementation should never be used in production because it's spinning"
   [version id]
-  (future
-    (loop []
-      (let [r (sut/fetch-command-result version id)]
-        (if (= ::mug/pending (::mug/command-status r))
-          (recur)
-          r)))))
+  (dh/with-retry
+    {:retry-if (fn [ret _ex] (= ::mug/pending (::mug/command-status ret)))
+     :delay-ms 10
+     :max-duration-ms 5000}
+    (sut/fetch-command-result version id)))
 
+;; todo run those test against different persistence mechanisms
 (use-fixtures :each main/start!)
 
 (deftest hatch-test
   (testing "hatching an empty pokemon card"
     (let [cmd-result (sut/hatch nil pokemon-system)]
       (is (= ::mug/pending (::mug/command-status cmd-result)))
-      (let [{:keys [event on-aggregate aggregate]} (deref (blocking-fetch @(:version cmd-result) some-id) 100 nil)
+      (let [{:keys [event on-aggregate aggregate]} (blocking-fetch @(:version cmd-result) some-id)
             aggregate-in-db (db/fetch-aggregate (xt/db @db/node) some-id)
             aggregate-stream-version (:stream-version aggregate)
             expected-aggregate {:id some-id :stream-version aggregate-stream-version}
@@ -47,7 +48,6 @@
                             :body (dissoc expected-aggregate :stream-version)
                             :stream-version event-stream-version}
             event-at-version (db/fetch-last-event-version event-stream-version some-id)]
-
         (is (= on-aggregate nil) "the aggregate is applied upon a nil (non existant value)")
 
         (is (= expected-event event event-at-version (first event-history-in-db))
@@ -59,9 +59,7 @@
 
         (is (some? event-stream-version))
         (is (= event-stream-version aggregate-stream-version)
-            "Aggregate and event has same stream version"))))
-
-  (testing "concurrent hatching"))
+            "Aggregate and event has same stream version")))))
 
 (deftest hatch-bad-values-test
   (testing "hatching when initial values doesn't match schema"
@@ -76,10 +74,9 @@
     (let [initial-value {:number 121}
           cmd-result (sut/hatch initial-value pokemon-system)]
       (is (= ::mug/pending (::mug/command-status cmd-result)))
-      (let [{:keys [aggregate event] :as x} (deref (blocking-fetch @(:version cmd-result) some-id) 100 nil)
+      (let [{:keys [aggregate event] :as x} (blocking-fetch @(:version cmd-result) some-id)
             expected-aggregate (assoc initial-value :id some-id
                                                     :stream-version (:stream-version aggregate))]
-        #_(sc.api/brk)
         (is (= event {:type :pokemon-card/hatched
                       :version 1
                       :aggregate-id some-id
@@ -93,7 +90,7 @@
           _ (is (= ::mug/pending (::mug/command-status first-pending-result)))
           second-pending-result (sut/hatch {:number 12} pokemon-system)
           _ (is (= ::mug/pending (::mug/command-status second-pending-result)))
-          second-result (deref (blocking-fetch @(:version second-pending-result) some-id) 500 :couic!)]
+          second-result (blocking-fetch @(:version second-pending-result) some-id)]
       (is (= {:error {:details {:actual {:id "some fake id"}
                                 :expected nil}
                       :message "the specified aggregate version couldn't be find"
@@ -103,6 +100,33 @@
                  (update-in [:error :details :actual] dissoc :stream-version)
                  (update :error dissoc :stream-version)))))))
 
-;; todo atomicity of several events by a single command
-;; todo test async
+(deftest hatch-concurrent-test
+  (testing "concurrent hatching"
+    (let [latch (CountDownLatch. 1)
+          ready (CountDownLatch. 10)
+          executor ^ExecutorService (Executors/newFixedThreadPool 10)
+          _ (future
+              (.await ready)
+              ; go !
+              (.countDown latch))
+          futures (.invokeAll executor ^Callable (repeat 10 (fn []
+                                                              (.countDown ready)
+                                                              ;; ready ?
+                                                              (.await latch)
+                                                              ;; go !
+                                                              (sut/hatch nil pokemon-system))))
+          res (mapv (fn [future] (blocking-fetch @(:version @future) some-id)) futures)
+          error? #(contains? % :error)]
+      (is (every? (fn [r] (= ::mug/complete (::mug/command-status r))) res) "every command can retrieve a result")
+      (is (= 1 (count (remove error? res))) "only 1 command succeeds")
+      (is (= 9 (count (filter error? res))) "9 commands failed"))))
+
+;; todo atomicity of several events by a single command: do we get the correct aggregate version ?
+
 ;; todo activate instrumentation of schemas
+
+
+(comment
+  (require 'unilog.config)
+  (unilog.config/start-logging! {:level :info
+                                 :overrides {"xtdb.tx" :debug}}))

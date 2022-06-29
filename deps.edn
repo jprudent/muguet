@@ -18,11 +18,11 @@
         spootnik/unilog {:mvn/version "0.7.29"}
         ;; -- filesystem stuff without hassle
         babashka/fs {:mvn/version "0.1.6"}
+        ;; -- retry/back-pressure
+        diehard/diehard {:mvn/version "0.11.3"}}
 
-        ;; test only
-        ;; todo create a profile for those libs
-        nubank/matcher-combinators {:mvn/version "3.5.0"}}
-
- :aliases {:test {:extra-paths ["test"]}
+ :aliases {:test {:extra-paths ["test"]
+                  :extra-deps {nubank/matcher-combinators {:mvn/version "3.5.0"}}}
            :kaocha {:main-opts ["-m" "kaocha.runner"]
-                    :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}}}}}
+                    :extra-deps {lambdaisland/kaocha {:mvn/version "1.68.1059"}
+                                 nubank/matcher-combinators {:mvn/version "3.5.0"}}}}}
