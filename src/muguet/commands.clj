@@ -95,7 +95,7 @@
                ;;      which attributes, and why
                :message "Invalid attributes"
                ;; TODO give complete coordinate of the error
-               :details (me/humanize (schema/explain schema attributes))}
+               :details (me/humanize (schema/explain optional-schema aggregate))}
        ::mug/command-status ::mug/complete})))
 
 (defn fetch-command-result

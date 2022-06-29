@@ -61,9 +61,15 @@
         (is (= event-stream-version aggregate-stream-version)
             "Aggregate and event has same stream version"))))
 
-  (testing "hatching when initial values doesn't match schema")
-
   (testing "concurrent hatching"))
+
+(deftest hatch-bad-values-test
+  (testing "hatching when initial values doesn't match schema"
+    (let [cmd-result (sut/hatch {:number "pika!"} pokemon-system)]
+      (is (= {:error {:details {:number ["should be a positive int"]}
+                      :message "Invalid attributes"
+                      :status :muguet.api/invalid}
+              :muguet.api/command-status :muguet.api/complete} cmd-result)))))
 
 (deftest hatch-init-vals-test
   (testing "hatching a pokemon card with initial values"
