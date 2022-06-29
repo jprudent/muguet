@@ -1,6 +1,7 @@
 (ns muguet.commands
   "those are out of the box commands provided by muguet"
   (:require [malli.error :as me]
+            [muguet.api :as mug]
             [muguet.core :as core]
             [muguet.db :as db]
             [muguet.meta-schemas :as meta]
@@ -25,25 +26,39 @@
 ;; todo hard coded kw
 (defn register-event-handlers
   []
-  (db/register-event-handler (keyword (name :pokemon-card) "hatched")
-                             ;; for now this is generic providing we added the id in the command,
-                             ;; which seems reasonable
-                             ;; todo provide a mechanism to let user define its own transactions
-                             '(fn [db-ctx event-ctx]
-                                (prn (keys db-ctx) (:indexing-tx db-ctx))
-                                (let [db (xtdb.api/db db-ctx)
-                                      id (-> event-ctx :aggregate :id)
-                                      existing-aggregate (muguet.db/fetch-aggregate db id)]
-                                  (if (= existing-aggregate (:on-aggregate event-ctx))
-                                    [[::xt/put (assoc (:aggregate event-ctx)
-                                                 :xt/id (muguet.db/id->xt-aggregate-id id)
-                                                 :stream-version (:indexing-tx db-ctx))]
-                                     ;; event history can be retrieved from the history of this document
-                                     [::xt/put (assoc (:event event-ctx)
-                                                 :xt/id (muguet.db/id->xt-last-event-id id)
-                                                 :stream-version (:indexing-tx db-ctx))]]
-                                    (throw (ex-info "version mismatched" {:actual existing-aggregate
-                                                                          :expected (:on-aggregate event-ctx)})))))))
+  (db/register-event-handler
+    (keyword (name :pokemon-card) "hatched")
+    ;; for now this is generic providing we added the id in the command,
+    ;; which seems reasonable
+    ;; todo provide a mechanism to let user define its own transactions
+    '(fn [db-ctx event-ctx]
+       (let [db (xtdb.api/db db-ctx)
+             id (-> event-ctx :aggregate :id)
+             existing-aggregate (muguet.db/fetch-aggregate db id)]
+         (if (= existing-aggregate (:on-aggregate event-ctx))
+           [[::xt/put (assoc (:aggregate event-ctx)
+                        :xt/id (muguet.db/id->xt-aggregate-id id)
+                        ;; todo rename stream-version ::mug/stream-version
+                        :stream-version (:indexing-tx db-ctx))]
+            ;; event history can be retrieved from the history of this document
+            [::xt/put (assoc (:event event-ctx)
+                        :xt/id (muguet.db/id->xt-last-event-id id)
+                        :stream-version (:indexing-tx db-ctx))]]
+           ;; put an error document so error can be retrieved from command
+           ;; this could also be implemented with a "registy" of promises but
+           ;; that's a state to maintain
+           (do (prn "!!!!!!" [[::xt/put {:xt/id (muguet.db/id->xt-error-id id)
+                                         :stream-version (:indexing-tx db-ctx)
+                                         :status ::mug/not-found
+                                         :message "the specified aggregate version couldn't be find"
+                                         :details {:actual existing-aggregate
+                                                   :expected (:on-aggregate event-ctx)}}]])
+               [[::xt/put {:xt/id (muguet.db/id->xt-error-id id)
+                           :stream-version (:indexing-tx db-ctx)
+                           :status ::mug/not-found
+                           :message "the specified aggregate version couldn't be find"
+                           :details {:actual existing-aggregate
+                                     :expected (:on-aggregate event-ctx)}}]]))))))
 
 ;; TODO rename initialize ? or identify
 (defn hatch
@@ -61,36 +76,41 @@
 
   [attributes {:keys [schema id-provider aggregate-name] :as collection-system}]
   {:malli/schema [:=> [[:maybe map?] [:map [:schema meta/meta-coll-schema
+                                            ;; todo let's remove the id-provider, the client must provide id
                                             :id-provider {:doc "injection of any strategy for id generation"} fn?]]]
                   core/api-return-schema]}
   (let [optional-schema (schema/optional schema)
         id (id-provider attributes)
-        aggregate (assoc attributes :id id)
-        events-ctx [{:on-aggregate nil
-                     :event (->event (keyword (name aggregate-name) "hatched") aggregate)
-                     :aggregate aggregate}]]
+        aggregate (assoc attributes :id id)]
     (if (schema/validate optional-schema aggregate)
       ;; fixme there is serious flaw here where the events are not inserted atomically
       ;;       solution is to insert the whole vector in the same transaction
       ;;       but we got same version for 2 different aggregate/last-event hummmmmm
-      (mapv (fn [event-ctx]
-              (let [version (db/insert! event-ctx)
-                    event (db/fetch-last-event-version version id)
-                    aggregate (db/fetch-aggregate-version version id)]
-                (if (and event aggregate)
-                  {:on-aggregate (:on-aggregate event-ctx)
-                   :event event
-                   :aggregate aggregate}
-                  {:error {:status :bad-request
-                           :message "couldn't apply events, conditions not met"
-                           :details "todo: get the exception from the transaction fn ?"}})))
-            events-ctx)
-      {:error {:status :invalid
+      {:version (db/insert-async {:on-aggregate nil
+                                  :event (->event (keyword (name aggregate-name) "hatched") aggregate)
+                                  :aggregate aggregate})
+       ::mug/command-status ::mug/pending}
+      {:error {:status ::mug/invalid
                ;; TODO the error message must be more precise, explaining
                ;;      which attributes, and why
                :message "Invalid attributes"
                ;; TODO give complete coordinate of the error
-               :details (me/humanize (schema/explain schema attributes))}})))
+               :details (me/humanize (schema/explain schema attributes))}
+       ::mug/command-status ::mug/complete})))
+
+(defn fetch-command-result
+  [version id]
+  (let [;; fixme there will be a bug if some other command at version+1 happened (won't find the element i think)
+        event (db/fetch-last-event-version version id)
+        aggregate (db/fetch-aggregate-version version id)]
+    (if (and event aggregate)
+      {:event event
+       :aggregate aggregate
+       ::mug/command-status ::mug/complete}
+      (if-let [error (db/fetch-error-version version id)]
+        {:error error
+         ::mug/command-status ::mug/complete}
+        {::mug/command-status ::mug/pending}))))
 
 ;; For those unconvinced by the metaphor
 (def create hatch)

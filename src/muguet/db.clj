@@ -6,16 +6,10 @@
 
 #_(xt/listen @node {::xt/event-type ::xt/indexed-tx} prn)
 
-(defn insert!
-  "**blocking** insert of the event context. Returns the aggregate version."
+(defn insert-async
+  "Insert of the event context. Returns a deferrable aggregate version."
   [event-ctx]
-  (xt/await-tx
-    @node
-    (xt/submit-tx @node [[::xt/fn (-> event-ctx :event :type) event-ctx]]))
-
-  ;; this doesn't work because a promise is not serializable
-  #_(let [ret (promise)]
-      (xt/submit-tx @node [[::xt/fn (-> event-ctx :event :type) event-ctx ret]])))
+  (xt/submit-tx-async @node [[::xt/fn (-> event-ctx :event :type) event-ctx]]))
 
 (def event-ctx
   [:map
@@ -49,6 +43,7 @@
 
 (defn id->xt-aggregate-id [id] (str id "_aggregate"))
 (defn id->xt-last-event-id [id] (str id "_last_event"))
+(defn id->xt-error-id [id] (str id "_error"))
 
 ;; todo all this functions should support pagination and ordering
 
@@ -83,9 +78,19 @@
 (defn fetch-aggregate-version
   [stream-version id]
   (dissoc (ffirst (xt/q (xt/db @node)
-                        '{:find [(pull ?last-event [*])]
+                        '{:find [(pull ?aggregate [*])]
                           :in [[xt-id version]]
-                          :where [[?last-event :xt/id xt-id]
-                                  [?last-event :stream-version version]]}
+                          :where [[?aggregate :xt/id xt-id]
+                                  [?aggregate :stream-version version]]}
                         [(id->xt-aggregate-id id) stream-version]))
+          :xt/id))
+
+(defn fetch-error-version
+  [stream-version id]
+  (dissoc (ffirst (xt/q (xt/db @node)
+                        '{:find [(pull ?error [*])]
+                          :in [[xt-id version]]
+                          :where [[?error :xt/id xt-id]
+                                  [?error :stream-version version]]}
+                        [(id->xt-error-id id) stream-version]))
           :xt/id))
