@@ -1,0 +1,2 @@
+{:deps {muguet/muguet {:local/root "../.."}
+        io.github.monjohn/sm2-plus {:git/sha "3772ca9b860229d065f390f955d5bd8364208831"}}}

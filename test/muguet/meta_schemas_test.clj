@@ -93,5 +93,11 @@
       (is (match? #{#"unknown type: `\[:map \[:attr \[:map \[:attr \[:map \[:attr :int2]\]\]\]\]\]`"}
                   (sut/errors (sut/explain schema)))))))
 
+(deftest meaningful-error-test
+  (is (= #{"The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
+         (sut/errors (sut/explain nil))))
+  (is (= #{"Collection metadata must be provided"} (sut/errors (sut/explain [:map]))))
+  (is (= #{"The collection metadata is invalid"} (sut/errors (sut/explain [:map #_{} [:attr1 :int]])))))
+
 (deftest pokemon-card-schema-test
   (is (sut/validate uc/pokemon-card)))

@@ -16,26 +16,29 @@
   {:uid (m/-simple-schema {:type :uid, :pred string?})
    :relation '???})
 
-;; TODO consider renaming collection aggregate-root to borrow from DDD
+;; TODO consider renaming collection aggregate-root borrowed from DDD
 (def collection-meta
-  [:and [:map
-         ; there are 2 kinds of collection
-         ; - :collection means there can be several instance of this schema
-         ; - :single means there can be only one
-         ; TODO why? it would be clearer to introduce a :limit attribute that set that limitation
-         [:collection/kind
-          {:doc "Defines if the content-type is:
+  [:and
+   {:error/message "Collection metadata must be provided"}
+   [:map
+    {:error/message "The collection metadata is invalid"}
+    ; there are 2 kinds of collection
+    ; - :collection means there can be several instance of this schema
+    ; - :single means there can be only one
+    ; TODO why? it would be clearer to introduce a :limit attribute that set that limitation
+    [:collection/kind
+     {:doc "Defines if the content-type is:
            - a collection: there can be several instance of this schema. Eg: products, users
            - a single type: there can be only one instance. Eg: the about section of a blog"}
-          [:enum :collection :single]]
-         [:collection/singular {:doc "Used to generate the API routes"} kebab]
-         [:collection/plural {:doc "Used to generate the API routes"} kebab]
-         [:collection/display-name {:doc "Whenever this collection name must be displayed. Eg: Swagger"} text]
-         [:collection/doc {:optional true :doc "Explains what the collection really is."} text]
-         [:collection/icon {:optional true :doc "FontAwesome icon name"} icon]]
+     [:enum :collection :single]]
+    [:collection/singular {:doc "Used to generate the API routes"} kebab]
+    [:collection/plural {:doc "Used to generate the API routes"} kebab]
+    [:collection/display-name {:doc "Whenever this collection name must be displayed. Eg: Swagger"} text]
+    [:collection/doc {:optional true :doc "Explains what the collection really is."} text]
+    [:collection/icon {:optional true :doc "FontAwesome icon name"} icon]]
    ; TODO plural must really be different from singular ?
    [:fn {:error/message "The singular must be different than plural"}
-    '(fn [{:keys [:collection/plural :collection/singular]}] (not= plural singular))]])
+    '(fn [{:keys [:collection/plural :collection/singular]}] (or (nil? plural) (not= plural singular)))]])
 
 (def schema-name [:keyword])
 
