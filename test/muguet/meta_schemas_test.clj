@@ -60,6 +60,12 @@
                                             [:y 'double?]
                                             [:plan [:map [:dims [:int {:min 1}]]]]]])]
       (is (sut/validate schema))))
+  (testing "the attribute can be a nested map without options"
+    (let [schema (conj empty-schema [:attr [:map
+                                            [:x :double]
+                                            [:y [:double {:min 0 :max 1}]]
+                                            [:plan [:map [:dims [:int {:min 1}]]]]]])]
+      (is (sut/validate schema))))
   (testing "the attribute can be a sequence of maps"
     (let [schema (conj empty-schema [:attr [:sequential [:map
                                                          [:x 'double?]
@@ -79,7 +85,7 @@
   (testing "unknown simple type in submap"
     ;; int2 is not a valid type (must be a valid symbol or keyword)
     (let [schema (conj empty-schema [:attr [:map [:foo :int2]]])]
-      ;; todo this is not what we exactly want, we would like "unknown type: `:int2`"
+      ;; todo this is not what we want, we would like "unknown type: `:int2`"
       (is (match? #{#"unknown type: `\[:map \[:foo :int2\]\]`"}
                   (sut/errors (sut/explain schema))))))
   (testing "malformed submap"
@@ -97,7 +103,10 @@
   (is (= #{"The collection schema must start with :map, then a map that describes the collection, then a list of attributes."}
          (sut/errors (sut/explain nil))))
   (is (= #{"Collection metadata must be provided"} (sut/errors (sut/explain [:map]))))
-  (is (= #{"The collection metadata is invalid"} (sut/errors (sut/explain [:map #_{} [:attr1 :int]])))))
+  (is (= #{"The collection metadata is invalid"} (sut/errors (sut/explain [:map #_{} [:attr1 :int]]))))
+  ;; todo we would like to know why
+  (is (= #{"The collection metadata is invalid"} (sut/errors (sut/explain [:map {} [:attr1 :int]]))))
+  (is (nil? (sut/errors (sut/explain empty-schema)))))
 
 (deftest pokemon-card-schema-test
   (is (sut/validate uc/pokemon-card)))

@@ -219,9 +219,9 @@ They can be unidirectional or bidirectional. In unidirectional relationships, on
   "extract all error messages from explanation."
   ;; todo do something smarter that correlate the error message with the key attribute
   [explanation]
-  (-> (walk/postwalk
-        (fn [x] (when (string? x) (println x)))
-        explanation)
-      (with-out-str)
-      (str/split-lines)
-      (set)))
+  (when-let [errors (-> (walk/postwalk
+                          (fn [x] (when (string? x) (println x)))
+                          explanation)
+                        (with-out-str)
+                        (not-empty))]
+    (set (str/split-lines errors))))
