@@ -1,11 +1,11 @@
-(ns muguet.commands-test
+(ns muguet.internals.commands-test
   "Those tests are using the real implementation of database through an in-memory instance of XTDB"
   (:require [clojure.test :refer :all]
-            [diehard.core :as dh]
             [muguet.api :as mug]
-            [muguet.commands :as sut]
-            [muguet.db :as db]
-            [muguet.main :as main]
+            [muguet.internals.commands :as sut]
+            [muguet.internals.db :as db]
+            [muguet.internals.main :as main]
+            [muguet.test-utils :as tu]
             [muguet.usecase :as uc]
             [xtdb.api :as xt])
   (:import (java.util.concurrent CountDownLatch ExecutorService Executors)))
@@ -17,14 +17,6 @@
                      :aggregate-name :pokemon-card
                      :id-provider id-provider})
 
-(defn blocking-fetch
-  [version id]
-  (dh/with-retry
-    {:retry-if (fn [ret _ex] (= ::mug/pending (::mug/command-status ret)))
-     :delay-ms 10
-     :max-duration-ms 5000}
-    (sut/fetch-command-result version id)))
-
 ;; todo run those test against different persistence mechanisms
 (use-fixtures :each main/start!)
 
@@ -32,7 +24,7 @@
   (testing "hatching an empty pokemon card"
     (let [cmd-result (sut/hatch nil pokemon-system)]
       (is (= ::mug/pending (::mug/command-status cmd-result)))
-      (let [{:keys [event on-aggregate aggregate]} (blocking-fetch @(:version cmd-result) some-id)
+      (let [{:keys [event on-aggregate aggregate]} (tu/blocking-fetch-result @(:version cmd-result) some-id)
             aggregate-in-db (db/fetch-aggregate (xt/db @db/node) some-id)
             aggregate-stream-version (:stream-version aggregate)
             expected-aggregate {:id some-id :stream-version aggregate-stream-version}
@@ -74,7 +66,7 @@
     (let [initial-value {:number 121}
           cmd-result (sut/hatch initial-value pokemon-system)]
       (is (= ::mug/pending (::mug/command-status cmd-result)))
-      (let [{:keys [aggregate event] :as x} (blocking-fetch @(:version cmd-result) some-id)
+      (let [{:keys [aggregate event] :as x} (tu/blocking-fetch-result @(:version cmd-result) some-id)
             expected-aggregate (assoc initial-value :id some-id
                                                     :stream-version (:stream-version aggregate))]
         (is (= event {:type :pokemon-card/hatched
@@ -90,8 +82,11 @@
           _ (is (= ::mug/pending (::mug/command-status first-pending-result)))
           second-pending-result (sut/hatch {:number 12} pokemon-system)
           _ (is (= ::mug/pending (::mug/command-status second-pending-result)))
-          second-result (blocking-fetch @(:version second-pending-result) some-id)]
-      (is (= {:error {:details {:actual {:id "some fake id"}
+          second-result (tu/blocking-fetch-result @(:version second-pending-result) some-id)]
+      (is (= {:error {:details {:actual {:id "some fake id"
+                                         ;; todo should those 2 technical information in response ? I don't think so.
+                                         :muguet.api/aggregate-name :pokemon-card
+                                         :muguet.api/document-type :muguet.api/aggregate}
                                 :expected nil}
                       :message "the specified aggregate version couldn't be find"
                       :status :muguet.api/not-found}
@@ -115,7 +110,7 @@
                                                               (.await latch)
                                                               ;; go !
                                                               (sut/hatch nil pokemon-system))))
-          res (mapv (fn [future] (blocking-fetch @(:version @future) some-id)) futures)
+          res (mapv (fn [future] (tu/blocking-fetch-result @(:version @future) some-id)) futures)
           error? #(contains? % :error)]
       (is (every? (fn [r] (= ::mug/complete (::mug/command-status r))) res) "every command can retrieve a result")
       (is (= 1 (count (remove error? res))) "only 1 command succeeds")

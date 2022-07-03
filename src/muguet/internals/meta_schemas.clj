@@ -1,4 +1,4 @@
-(ns muguet.meta-schemas
+(ns muguet.internals.meta-schemas
   "meta-schemas for schemas (the one found under content-types directory)
   they are used to check the basic form of schemas"
   (:require [clojure.string :as str]

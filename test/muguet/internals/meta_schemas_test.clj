@@ -1,8 +1,8 @@
-(ns muguet.meta-schemas-test
+(ns muguet.internals.meta-schemas-test
   (:require [clojure.test :refer [deftest is testing]]
             [malli.dev.pretty :as mp]
             [matcher-combinators.test]
-            [muguet.meta-schemas :as sut]
+            [muguet.internals.meta-schemas :as sut]
             [muguet.usecase :as uc]))
 
 (def valid-schema

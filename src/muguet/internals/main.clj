@@ -1,6 +1,6 @@
-(ns muguet.main
-  (:require [muguet.commands :as commands]
-            [muguet.db :as db]
+(ns muguet.internals.main
+  (:require [muguet.internals.commands :as commands]
+            [muguet.internals.db :as db]
             [xtdb.api :as xt]))
 
 (defn start!

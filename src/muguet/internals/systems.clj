@@ -1,9 +1,9 @@
-(ns muguet.systems
-  (:require [integrant.core :as ig]
+(ns muguet.internals.systems
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
+            [integrant.core :as ig]
             [unilog.config :as log]
-            [babashka.fs :as fs]
-            [xtdb.api :as xt]
-            [clojure.edn :as edn]))
+            [xtdb.api :as xt]))
 
 (def config
   {:muguet/logger {:console true
@@ -16,8 +16,7 @@
 (defmethod ig/init-key :muguet/logger [_ conf] (log/start-logging! conf))
 (defmethod ig/init-key :muguet/repository [_ conf] (xt/start-node conf))
 (defmethod ig/halt-key! :muguet/repository [_ xtdb-node] (.close xtdb-node))
-(defmethod ig/init-key :muguet/app [conf]
-  )
+(defmethod ig/init-key :muguet/app [conf])
 
 (defonce current-system (atom nil))
 

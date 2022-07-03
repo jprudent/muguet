@@ -1,11 +1,12 @@
 (ns supermemo.core
-  (:require [muguet.utils :as mugu]
+  (:require [muguet.core :as mug]
+            [muguet.utils :as mugu]
             [sm2-plus :as sm2]
             [xtdb.api :as xt]))
 
 (def flashcard
   [:map
-   (mugu/gen-collection-metadata "flashcard")
+   (mugu/->collection-metadata "flashcard")
    [:question {:doc "Should provide a meaningful context where the learning material was encounter in reality (examples, situation, ...)"}
     [:string {:min 1}]]
    [:response {:doc "Some clue to learn the flashcard"}
@@ -83,7 +84,7 @@
 
 
 (comment
-  (let [samples (repeatedly 100 #(mugu/gen-aggregate flashcard))]
-       ;; todo use hathing function
-       (xt/submit-tx node (map (fn [x] [::xt/put (assoc x :xt/id (random-uuid))]) samples))
-       (xt/sync node)))
+  (doseq [sample (repeatedly 100 #(mugu/gen-aggregate flashcard))]
+         (mug/hatch sample {:schema flashcard
+                            :id-provider (fn [_x] (random-uuid))
+                            :aggregate-name :flashcard})))

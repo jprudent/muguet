@@ -1,5 +1,6 @@
-(ns muguet.db
-  (:require [xtdb.api :as xt])
+(ns muguet.internals.db
+  (:require [muguet.api :as muga]
+            [xtdb.api :as xt])
   (:import (java.time Duration)))
 
 (defonce node (atom nil))
@@ -47,11 +48,11 @@
 
 ;; todo all this functions should support pagination and ordering
 
-;; todo apply this to all functions
 (defn clean-doc
   "Remove purely technical attribute to have a clean API"
   [doc]
-  (dissoc doc :xt/id))
+  ;; :stream-version is part of the API
+  (dissoc doc :xt/id ::muga/aggregate-name ::muga/document-type))
 
 (defn fetch-aggregate
   ; The DB must be provided because it's the context it provides a context
@@ -60,37 +61,38 @@
   ; todo could also use version as a query context
   "Utility function that fetch an aggregate by id"
   [db id]
-  (dissoc (xt/entity db (id->xt-aggregate-id id)) :xt/id))
+  (clean-doc (xt/entity db (id->xt-aggregate-id id))))
 
 (defn fetch-event-history
   "Retrieve the all the events that have been applied on the aggregate"
   ;; todo we probably want to retrieve slices of event history to rebuild
   ;;      from snapshots.
   [db id]
-  (map (fn [{:keys [:xtdb.api/doc]}] (dissoc doc :xt/id))
+  (map (fn [{:keys [:xtdb.api/doc]}] (clean-doc doc))
        (xt/entity-history db (id->xt-last-event-id id) :asc {:with-docs? true})))
 
+;; todo remove id parameter, stream-version should be sufficient
 (defn fetch-last-event-version
   "Fetch last event holding the version"
   [stream-version id]
-  (dissoc (ffirst (xt/q (xt/db @node)
-                        '{:find [(pull ?last-event [*])]
-                          :in [xt-id version]
-                          :where [[?last-event :xt/id xt-id]
-                                  [?last-event :stream-version version]]}
-                        (id->xt-last-event-id id) stream-version))
-          :xt/id))
+  (clean-doc (ffirst (xt/q (xt/db @node)
+                           '{:find [(pull ?last-event [*])]
+                             :in [xt-id version]
+                             :where [[?last-event :xt/id xt-id]
+                                     [?last-event :stream-version version]]}
+                           (id->xt-last-event-id id) stream-version))))
 
+;; todo remove id parameter, stream-version should be sufficient
 (defn fetch-aggregate-version
   [stream-version id]
-  (dissoc (ffirst (xt/q (xt/db @node)
-                        '{:find [(pull ?aggregate [*])]
-                          :in [[xt-id version]]
-                          :where [[?aggregate :xt/id xt-id]
-                                  [?aggregate :stream-version version]]}
-                        [(id->xt-aggregate-id id) stream-version]))
-          :xt/id))
+  (clean-doc (ffirst (xt/q (xt/db @node)
+                           '{:find [(pull ?aggregate [*])]
+                             :in [[xt-id version]]
+                             :where [[?aggregate :xt/id xt-id]
+                                     [?aggregate :stream-version version]]}
+                           [(id->xt-aggregate-id id) stream-version]))))
 
+;; todo remove id parameter, stream-version should be sufficient because it's unique for the whole database
 (defn fetch-error-version
   [stream-version id]
   (with-open [cursor (xt/open-entity-history (xt/db @node) (id->xt-error-id id) :asc
@@ -101,3 +103,14 @@
       (clean-doc (some (fn [{:keys [:xtdb.api/doc]}]
                          (when (= stream-version (:stream-version doc)) doc))
                        history)))))
+;; todo remove id parameter, stream-version should be sufficient
+(defn all
+  [stream-version aggregate-name]
+  (map
+    (comp clean-doc first)
+    (xt/q (xt/db @node)
+          '{:find [(pull aggregate [*])]
+            :in [aggregate-name]
+            :where [[aggregate ::muga/aggregate-name aggregate-name]
+                    [aggregate ::muga/document-type ::muga/aggregate]]}
+          aggregate-name)))

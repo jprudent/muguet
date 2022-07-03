@@ -1,8 +1,8 @@
-(ns muguet.schema-test
+(ns muguet.internals.schema-test
   (:require [clojure.test :refer :all]
             [malli.core :as m]
             [malli.util :as mu]
-            [muguet.schema :as sut]
+            [muguet.internals.schema :as sut]
             [muguet.usecase :as uc]))
 
 (deftest validate-test

@@ -1,8 +1,8 @@
-(ns muguet.schema
+(ns muguet.internals.schema
   "About validating aggregate against schema"
   (:require [malli.core :as m]
             [malli.util :as mu]
-            [muguet.meta-schemas :as meta]))
+            [muguet.internals.meta-schemas :as meta]))
 
 (defn validate
   [schema aggregate]
