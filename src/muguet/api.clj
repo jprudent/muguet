@@ -31,3 +31,9 @@
   [:orn
    [:ko error-schema]
    [:ok response-schema]])
+
+(def aggregate-system-schema
+  [:map
+   [:id-provider fn?]
+   [:aggregate-name :keyword]
+   [:schema :schema]])

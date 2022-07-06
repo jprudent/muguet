@@ -19,7 +19,10 @@
         ;; -- filesystem stuff without hassle
         babashka/fs {:mvn/version "0.1.6"}
         ;; -- retry/back-pressure
-        diehard/diehard {:mvn/version "0.11.3"}}
+        diehard/diehard {:mvn/version "0.11.3"}
+        ;; -- interceptor executor
+        exoscale/interceptor {:mvn/version "0.1.10"}
+        }
 
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps {nubank/matcher-combinators {:mvn/version "3.5.0"}}}

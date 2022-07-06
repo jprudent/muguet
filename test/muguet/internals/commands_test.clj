@@ -101,9 +101,9 @@
           ready (CountDownLatch. 10)
           executor ^ExecutorService (Executors/newFixedThreadPool 10)
           _ (future
-              (.await ready)
-              ; go !
-              (.countDown latch))
+             (.await ready)
+             ; go !
+             (.countDown latch))
           futures (.invokeAll executor ^Callable (repeat 10 (fn []
                                                               (.countDown ready)
                                                               ;; ready ?
@@ -119,9 +119,3 @@
 ;; todo atomicity of several events by a single command: do we get the correct aggregate version ?
 
 ;; todo activate instrumentation of schemas
-
-
-(comment
-  (require 'unilog.config)
-  (unilog.config/start-logging! {:level :info
-                                 :overrides {"xtdb.tx" :debug}}))
