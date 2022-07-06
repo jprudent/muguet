@@ -98,7 +98,6 @@
   ;; todo command-name is only there to get clean name, but it could be generated
   [aggregate-system command-name interceptors]
   (let [command-fn (fn [id stream-version command-params]
-                     (sc.api/spy)
                      (int/execute
                       {:aggregate-system aggregate-system
                        :aggregate-id id

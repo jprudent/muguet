@@ -7,8 +7,10 @@
             [muguet.api :as muga]
             [muguet.core :as mug]
             [muguet.internals.commands :as sut]
+            [muguet.internals.db :as db]
             [muguet.test-utils :as tu]
-            [muguet.utils :as mugu])
+            [muguet.utils :as mugu]
+            [xtdb.api :as xt])
   (:import (java.time LocalDateTime)))
 
 
@@ -76,7 +78,31 @@
                       (log/info "-=[ Strarting Test ]=-")
                       (f)))
 
-(deftest my-command-test
+(deftest create-flashcard-test
+  (let [id 1
+        create-cmd (sut/register-command
+                    flashcard-system
+                    :flashcard/create
+                    [(sut/validate-command-params (mu/optional-keys flashcard-schema [:due-date]))
+                     (sut/build-event :flashcard/created :command-params)])
+        flashcard-init {:question "q?" :response "r" :id id}
+        stream-version (create-cmd id nil flashcard-init)
+        {:keys [aggregate event ::muga/command-status]} (tu/blocking-fetch-result stream-version id)
+        expected-event {:type :flashcard/created
+                        :aggregate-id id
+                        :body flashcard-init}]
+    (is (= :muguet.api/complete command-status))
+    (is (= expected-event (dissoc event :stream-version)))
+    (is (= flashcard-init (dissoc aggregate :stream-version)))
+    (is (and (:stream-version event) (:stream-version aggregate)))
+    (is (= (:stream-version event) (:stream-version aggregate)) "aggregate and events have same stream-version")
+
+    ;; -- the aggregate and event can be retrieved separately from a command result
+    (is (= [event] (db/fetch-event-history (xt/db @db/node) id)))
+    (is (= event (db/fetch-last-event-version (:stream-version event) id)))
+    (is (= aggregate (db/fetch-aggregate-version (:stream-version event) id)))))
+
+(deftest rate-flashcard-test
   (let [id 1
         create-cmd (sut/register-command
                     flashcard-system
@@ -86,9 +112,8 @@
         flashcard-init {:question "q?" :response "r" :id id}
         version (create-cmd id nil flashcard-init)
         create-result (tu/blocking-fetch-result version id)
+        created-event (:event create-result)
         _ (is (= :muguet.api/complete (:muguet.api/command-status create-result)))
-        _ (is (contains? create-result :aggregate))
-        _ (is (contains? create-result :event))
         rate-cmd (sut/register-command
                   flashcard-system
                   :flashcard/rate
@@ -103,7 +128,9 @@
             :body rating}
            (dissoc event :stream-version)))
     (is (= flashcard-init (dissoc aggregate :due-date ::muga/document-type :stream-version)))
-    (is (pos-int? (compare (:due-date aggregate) (LocalDateTime/now))))))
+    (is (pos-int? (compare (:due-date aggregate) (LocalDateTime/now))))
+
+    (is (= [created-event event] (db/fetch-event-history (xt/db @db/node) id)))))
 
 ;; todo invalid command args
 
