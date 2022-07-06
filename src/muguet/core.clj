@@ -13,8 +13,7 @@
   (doseq [{:keys [schema] :as system} systems]
     (if (meta/validate schema)
       (mug-cmd/register-events! system)
-      (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {})))))
-  (mug-cmd/register-event-handlers systems))
+      (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {}))))))
 
 (defn find-one
   "Return a future of the given query"
@@ -26,7 +25,3 @@
   ";; There is no \"delete\" but a \"destroy\" to enforce the destructive outcome
   this operation. User can implement a non-destructive method of his own."
   [id collection-system])
-
-(defn hatch
-  [attributes aggregate-system]
-  (mug-cmd/hatch attributes aggregate-system))

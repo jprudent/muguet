@@ -7,11 +7,7 @@
 
 #_(xt/listen @node {::xt/event-type ::xt/indexed-tx} prn)
 
-;; todo must allow to insert a coll of event-ctx in the same transaction
-(defn insert-async
-  "Insert of the event context. Returns a deferrable aggregate version."
-  [event-ctx]
-  (xt/submit-tx-async @node [[::xt/fn (-> event-ctx :event :type) event-ctx]]))
+
 
 (def event-ctx
   [:map

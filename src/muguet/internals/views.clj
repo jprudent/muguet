@@ -4,9 +4,9 @@
 
 
 ;; there are 3 kinds of views
-;; - `poly-type-aggregate-view` are db wide views that spans over multiple aggregates
-;; - `mono-type-aggregate-view` are views about a single type of aggregate, and concerns several aggregates
-;; - `one-aggregate-view` is a view about a single specific aggregate
+;; - `poly-type-aggregate-view` are db wide views that spans over multiple aggregates (eg: a consolidated dashboard)
+;; - `mono-type-aggregate-view` are views about a single type of aggregate, and concerns several aggregates (eg: a list of products)
+;; - `one-aggregate-view` is a view about a single specific aggregate (eg: a product detail)
 ;; A view can be generated with
 ;; - a query that works on aggregate and event documents
 ;;   - the result is computed on the fly
@@ -28,5 +28,7 @@
     ;; todo should close the
     (xt/listen @db/node {::xt/event-type ::xt/indexed-tx
                          :with-tx-ops? true}
-               prn)))
+               (fn []
+                 ;; todo apply event on current view version
+                 ))))
 
