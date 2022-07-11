@@ -83,11 +83,7 @@
           second-pending-result (sut/hatch {:number 12} pokemon-system)
           _ (is (= ::mug/pending (::mug/command-status second-pending-result)))
           second-result (tu/blocking-fetch-result @(:version second-pending-result) some-id)]
-      (is (= {:error {:details {:actual {:id "some fake id"
-                                         ;; todo should those 2 technical information in response ? I don't think so.
-                                         :muguet.api/aggregate-name :pokemon-card
-                                         :muguet.api/document-type :muguet.api/aggregate}
-                                :expected nil}
+      (is (= {:error {
                       :message "the specified aggregate version couldn't be find"
                       :status :muguet.api/not-found}
               :muguet.api/command-status :muguet.api/complete}
