@@ -20,7 +20,7 @@
   (db/all version (:aggregate-name aggregate-system)))
 
 ;; todo should provide a stream-version so init-value could be a snapshot, without need to process all events
-(defn register-event-based-mono-type-aggregate-view
+#_(defn register-event-based-mono-type-aggregate-view
   [view-name aggregate-system reduction-fn init-value]
   (let [view (reduce reduction-fn init-value (db/fetch-events (:aggregate-name aggregate-system)))]
     (db/save-view view-name view)

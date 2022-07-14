@@ -7,12 +7,13 @@
   (:import (java.time Duration)))
 
 (defn start!
-  [systems]
+  [system]
   (when-let [node @db/node] (.close node))
   (reset! db/node (xt/start-node {}))
-  (doseq [{:keys [schema] :as system} systems]
+  (let [{:keys [schema] :as system} system]
     (if (meta/validate schema)
-      (mug-cmd/register-events! system)
+      (-> (mug-cmd/register-events! system)
+          (mug-cmd/register-commands!))
       (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {}))))))
 
 (defn find-one

@@ -23,6 +23,7 @@
 ;; pokemon cards.
 
 ;; todo move this in public api
+;; todo why is there an aggregate id mandatory ?
 (defn fetch-command-result
   "Given a stream-version returned by a command (all commands ares asynchronous)
   and an aggregate-id, returns the status, event, aggregate or error "
@@ -43,14 +44,13 @@
   [{:keys [type body-schema]}]
   (fn [aggregate-id body]
     {:pre [(m/validate body-schema body)]}
-    {:type type :body body :aggregate-id aggregate-id}))
-
+    {:type type :body body :aggregate-id aggregate-id}))`é
 (defn assoc-event-builder
   [event]
   (assoc event :builder (make-event-builder event)))
 
 (defn register-events!
-  [{:keys [aggregate-name event-registry] :as _system}]
+  [{:keys [aggregate-name event-registry] :as system}]
   (doseq [{:keys [event-handler type]} (vals event-registry)]
     (db/register-tx-fn type `(fn ~'[db-ctx event-ctx]
                                (let ~'[{:keys [event on-aggregate aggregate-id]} event-ctx]
@@ -58,7 +58,8 @@
                                               :xt/id (muguet.internals.db/id->xt-aggregate-id ~'aggregate-id)
                                               ::muga/aggregate-name ~aggregate-name
                                               ::muga/document-type ::muga/aggregate
-                                              :stream-version (:indexing-tx ~'db-ctx))]])))))
+                                              :stream-version (:indexing-tx ~'db-ctx))]]))))
+  system)
 
 (defn submit-event
   [f]
@@ -141,3 +142,13 @@
             (let [event-builder (-> aggregate-system :event-registry type :builder)
                   event (event-builder aggregate-id (event-body-fn context))]
               (assoc context :event event)))})
+
+(defn register-commands! [system]
+  (reduce-kv (fn [system command-name interceptors]
+               (assoc-in system [:commands command-name]
+                         (register-command system command-name interceptors)))
+             system
+             (:commands system)))
+
+(defn get-command [system command-name]
+  (get-in system [:commands command-name]))

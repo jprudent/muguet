@@ -3,6 +3,7 @@
             [xtdb.api :as xt])
   (:import (java.time Duration)))
 
+;; todo set in system, not in a global var
 (defonce node (atom nil))
 
 #_(xt/listen @node {::xt/event-type ::xt/indexed-tx} prn)

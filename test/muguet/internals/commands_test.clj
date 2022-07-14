@@ -1,10 +1,9 @@
 (ns muguet.internals.commands-test
   "Those tests are using the real implementation of database through an in-memory instance of XTDB"
   (:require [clojure.test :refer :all]
-            [muguet.api :as mug]
             [muguet.internals.commands :as sut]
             [muguet.internals.db :as db]
-            [muguet.internals.main :as main]
+            [muguet.core :as mug]
             [muguet.test-utils :as tu]
             [muguet.usecase :as uc]
             [xtdb.api :as xt])
@@ -18,9 +17,13 @@
                      :id-provider id-provider})
 
 ;; todo run those test against different persistence mechanisms
-(use-fixtures :each main/start!)
+#_(use-fixtures :each (fn [f]
+                      (log/info "-=[ Initialize Muguet ]=-")
+                      (mug/start! [pokemon-system])
+                      (log/info "-=[ Strarting Test ]=-")
+                      (f)))
 
-(deftest hatch-test
+#_(deftest hatch-test
   (testing "hatching an empty pokemon card"
     (let [cmd-result (sut/hatch nil pokemon-system)]
       (is (= ::mug/pending (::mug/command-status cmd-result)))
@@ -53,7 +56,7 @@
         (is (= event-stream-version aggregate-stream-version)
             "Aggregate and event has same stream version")))))
 
-(deftest hatch-bad-values-test
+#_(deftest hatch-bad-values-test
   (testing "hatching when initial values doesn't match schema"
     (let [cmd-result (sut/hatch {:number "pika!"} pokemon-system)]
       (is (= {:error {:details {:number ["should be a positive int"]}
@@ -61,7 +64,7 @@
                       :status :muguet.api/invalid}
               :muguet.api/command-status :muguet.api/complete} cmd-result)))))
 
-(deftest hatch-init-vals-test
+#_(deftest hatch-init-vals-test
   (testing "hatching a pokemon card with initial values"
     (let [initial-value {:number 121}
           cmd-result (sut/hatch initial-value pokemon-system)]
@@ -76,7 +79,7 @@
                       :body (dissoc expected-aggregate :stream-version)}))
         (is (= aggregate expected-aggregate))))))
 
-(deftest hatch-id-exists-test
+#_(deftest hatch-id-exists-test
   (testing "hatching when id already exists"
     (let [first-pending-result (sut/hatch nil pokemon-system)
           _ (is (= ::mug/pending (::mug/command-status first-pending-result)))
@@ -95,7 +98,7 @@
                  (update-in [:error :details :actual] dissoc :stream-version)
                  (update :error dissoc :stream-version)))))))
 
-(deftest hatch-concurrent-test
+#_(deftest hatch-concurrent-test
   (testing "concurrent hatching"
     (let [latch (CountDownLatch. 1)
           ready (CountDownLatch. 10)
