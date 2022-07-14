@@ -7,8 +7,8 @@
             [muguet.api :as muga]
             [muguet.core :as mug]
             [muguet.internals.commands :as sut]
-            [muguet.internals.views :as views]
             [muguet.internals.db :as db]
+            [muguet.internals.views :as views]
             [muguet.test-utils :as tu]
             [muguet.utils :as mugu]
             [xtdb.api :as xt])
@@ -53,25 +53,25 @@
 
 (def rating-schema
   [:int {:error/message "The rating should be an integer between 0 and 5"
-         :min           0
-         :max           5}])
+         :min 0
+         :max 5}])
 
 (def flashcard-system-config
-  {:schema         flashcard-schema
+  {:schema flashcard-schema
    :aggregate-name :flashcard
    :event-registry (-> (group-by :type [(sut/assoc-event-builder
-                                          {:type          :flashcard/rated
-                                           :body-schema   rating-schema
+                                          {:type :flashcard/rated
+                                           :body-schema rating-schema
                                            :event-handler `apply-rated-event})
                                         (sut/assoc-event-builder
-                                          {:type          :flashcard/created
-                                           :body-schema   flashcard-init-schema
+                                          {:type :flashcard/created
+                                           :body-schema flashcard-init-schema
                                            :event-handler `apply-created-event})])
                        (update-vals first))
-   :commands       {:flashcard/create [(sut/validate-command-params (mu/optional-keys flashcard-schema [:due-date]))
-                                       (sut/build-event :flashcard/created :command-params)]
-                    :flashcard/rate   [(sut/validate-command-params rating-schema)
-                                       (sut/build-event :flashcard/rated :command-params)]}})
+   :commands {:flashcard/create [(sut/validate-command-params (mu/optional-keys flashcard-schema [:due-date]))
+                                 (sut/build-event :flashcard/created :command-params)]
+              :flashcard/rate [(sut/validate-command-params rating-schema)
+                               (sut/build-event :flashcard/rated :command-params)]}})
 
 (def flashcard-system (atom nil))
 ;; |=-----------------------------------------------------------------------=|
@@ -91,9 +91,9 @@
         flashcard-init {:question "q?" :response "r" :id id}
         stream-version (create-cmd id nil flashcard-init)
         {:keys [aggregate event ::muga/command-status]} (tu/blocking-fetch-result stream-version id)
-        expected-event {:type         :flashcard/created
+        expected-event {:type :flashcard/created
                         :aggregate-id id
-                        :body         flashcard-init}]
+                        :body flashcard-init}]
     (is (= :muguet.api/complete command-status))
     (is (= expected-event (dissoc event :stream-version)))
     (is (= flashcard-init (dissoc aggregate :stream-version)))
@@ -108,10 +108,10 @@
 (deftest already-exists-test
   (let [create-cmd (sut/get-command @flashcard-system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id 1}
-        _ (create-cmd 1 nil flashcard-init)
-        res2 (create-cmd 1 nil flashcard-init)
-        res2 (tu/blocking-fetch-result res2 1)]
-    (is (= 1 (get-in res2 [:error :details :actual :id])))
+        v1 (create-cmd 1 nil flashcard-init)
+        v2 (create-cmd 1 nil flashcard-init)
+        res2 (tu/blocking-fetch-result v2 1)]
+    (is (= v1 (get-in res2 [:error :details :actual])))
     (is (= nil (get-in res2 [:error :details :expected])))))
 
 (deftest concurrent-test
@@ -133,7 +133,6 @@
                                                               (create-cmd 1 nil flashcard-init))))
           res (mapv (fn [future] (tu/blocking-fetch-result @future 1)) futures)
           error? #(contains? % :error)]
-      (def res res)
       (is (every? (fn [r] (= ::muga/complete (::muga/command-status r))) res) "every command can retrieve a result")
       (is (= 1 (count (remove error? res))) "only 1 command succeeds")
       (is (= 9 (count (filter error? res))) "9 commands failed"))))
@@ -152,17 +151,27 @@
 
         rate-cmd (sut/get-command @flashcard-system :flashcard/rate)
         rating 4
-        ;; todo find api trick so we don't have to get/deref the version
         cmd-result (rate-cmd id version rating)
         {fc-rated :aggregate rated-event :event} (tu/blocking-fetch-result cmd-result id)]
-    (is (= {:type         :flashcard/rated
+    (is (= {:type :flashcard/rated
             :aggregate-id id
-            :body         rating}
+            :body rating}
            (dissoc rated-event :stream-version)))
     (is (= flashcard-init (dissoc fc-rated :due-date ::muga/document-type :stream-version)))
     (is (pos-int? (compare (:due-date fc-rated) (LocalDateTime/now))))
 
     (is (= [created-event rated-event] (db/fetch-event-history (xt/db @db/node) id)))))
+
+(deftest invalid-version-test
+  (let [create-cmd (sut/get-command @flashcard-system :flashcard/create)
+        rate-cmd (sut/get-command @flashcard-system :flashcard/rate)
+        flashcard-init {:question "q?" :response "r" :id 1}
+        v1 (create-cmd 1 nil flashcard-init)
+        v2 (rate-cmd 1 v1 5)
+        result (tu/blocking-fetch-result (rate-cmd 1 v1 3) 1)]
+    (is (= v2 (get-in result [:error :details :actual])))
+    (is (= v1 (get-in result [:error :details :expected])))))
+
 
 (deftest view-all-test
   (let [create (sut/get-command @flashcard-system :flashcard/create)
@@ -177,5 +186,5 @@
 
 (comment
   (require 'unilog.config)
-  (unilog.config/start-logging! {:level     :info
+  (unilog.config/start-logging! {:level :info
                                  :overrides {"xtdb.tx" :debug}}))

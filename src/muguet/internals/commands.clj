@@ -44,7 +44,7 @@
   [{:keys [type body-schema]}]
   (fn [aggregate-id body]
     {:pre [(m/validate body-schema body)]}
-    {:type type :body body :aggregate-id aggregate-id}))`é
+    {:type type :body body :aggregate-id aggregate-id})) `é
 (defn assoc-event-builder
   [event]
   (assoc event :builder (make-event-builder event)))
@@ -90,8 +90,8 @@
                        ::muga/aggregate-name aggregate-name
                        ::muga/document-type ::muga/error
                        :message "the specified aggregate version couldn't be find"
-                       :details {:actual existing-aggregate
-                                 :expected (:on-aggregate event-ctx)}}]
+                       :details {:actual (:stream-version existing-aggregate)
+                                 :expected stream-version}}]
         (clojure.tools.logging/error error-doc)
         [[::xt/put error-doc]]))))
 
@@ -100,20 +100,20 @@
   [aggregate-system command-name interceptors]
   (let [command-fn (fn [id stream-version command-params]
                      (int/execute
-                      {:aggregate-system aggregate-system
-                       :aggregate-id id
-                       :stream-version stream-version
-                       :command-params command-params}
-                      (int/into-stages
-                       (into interceptors [(submit-event (keyword command-name))])
-                       [:enter]
-                       (fn [stage-f execution-context]
-                         (int/before-stage stage-f (fn [context]
-                                                     (log/info "Before" (:name (:interceptor execution-context)) ":" (dissoc context :aggregate-system ::int/queue ::int/stack))
-                                                     context))))))]
+                       {:aggregate-system aggregate-system
+                        :aggregate-id id
+                        :stream-version stream-version
+                        :command-params command-params}
+                       (int/into-stages
+                         (into interceptors [(submit-event (keyword command-name))])
+                         [:enter]
+                         (fn [stage-f execution-context]
+                           (int/before-stage stage-f (fn [context]
+                                                       (log/info "Before" (:name (:interceptor execution-context)) ":" (dissoc context :aggregate-system ::int/queue ::int/stack))
+                                                       context))))))]
     (db/register-tx-fn
-     (keyword command-name)
-     '(fn [db-ctx event-ctx] (muguet.internals.commands/event-tx-fn db-ctx event-ctx)))
+      (keyword command-name)
+      '(fn [db-ctx event-ctx] (muguet.internals.commands/event-tx-fn db-ctx event-ctx)))
     command-fn))
 
 ;; typical command interceptor chain:
