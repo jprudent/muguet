@@ -58,7 +58,6 @@
 (def flashcard-system-config
   {:schema         flashcard-schema
    :aggregate-name :flashcard
-   :id-provider    :id
    :event-registry (-> (group-by :type [(sut/assoc-event-builder
                                           {:type          :flashcard/rated
                                            :body-schema   rating-schema
@@ -107,6 +106,7 @@
 
 ;; todo already existing
 ;; todo concurrency
+;; todo invalid command args
 
 (deftest rate-flashcard-test
   (let [id 1
@@ -140,7 +140,7 @@
                      init-values)
         all (views/all (last results) @flashcard-system)]
     (is (= init-values (sort-by :id (map #(dissoc % :stream-version) all))))))
-;; todo invalid command args
+
 
 (comment
   (require 'unilog.config)
