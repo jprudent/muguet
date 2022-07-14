@@ -12,7 +12,8 @@
             [muguet.test-utils :as tu]
             [muguet.utils :as mugu]
             [xtdb.api :as xt])
-  (:import (java.time LocalDateTime)))
+  (:import (java.time LocalDateTime)
+           (java.util.concurrent CountDownLatch ExecutorService Executors)))
 
 
 ;; todo run those test against different persistence mechanisms
@@ -104,8 +105,40 @@
     (is (= event (db/fetch-last-event-version (:stream-version event) id)))
     (is (= aggregate (db/fetch-aggregate-version (:stream-version event) id)))))
 
-;; todo already existing
-;; todo concurrency
+(deftest already-exists-test
+  (let [create-cmd (sut/get-command @flashcard-system :flashcard/create)
+        flashcard-init {:question "q?" :response "r" :id 1}
+        _ (create-cmd 1 nil flashcard-init)
+        res2 (create-cmd 1 nil flashcard-init)
+        res2 (tu/blocking-fetch-result res2 1)]
+    (is (= 1 (get-in res2 [:error :details :actual :id])))
+    (is (= nil (get-in res2 [:error :details :expected])))))
+
+(deftest concurrent-test
+  (testing "concurrent hatching"
+    (let [latch (CountDownLatch. 1)
+          ready (CountDownLatch. 10)
+          executor ^ExecutorService (Executors/newFixedThreadPool 10)
+          create-cmd (sut/get-command @flashcard-system :flashcard/create)
+          flashcard-init {:question "q?" :response "r" :id 1}
+          _ (future
+              (.await ready)
+              ; go !
+              (.countDown latch))
+          futures (.invokeAll executor ^Callable (repeat 10 (fn []
+                                                              (.countDown ready)
+                                                              ;; ready ?
+                                                              (.await latch)
+                                                              ;; go !
+                                                              (create-cmd 1 nil flashcard-init))))
+          res (mapv (fn [future] (tu/blocking-fetch-result @future 1)) futures)
+          error? #(contains? % :error)]
+      (def res res)
+      (is (every? (fn [r] (= ::muga/complete (::muga/command-status r))) res) "every command can retrieve a result")
+      (is (= 1 (count (remove error? res))) "only 1 command succeeds")
+      (is (= 9 (count (filter error? res))) "9 commands failed"))))
+
+;; todo invalid version
 ;; todo invalid command args
 
 (deftest rate-flashcard-test
