@@ -58,8 +58,8 @@
   (assoc event :builder (make-event-builder event)))
 
 (defn register-events!
-  [{:keys [aggregate-name event-registry] :as system}]
-  (doseq [{:keys [event-handler type]} (vals event-registry)]
+  [{:keys [aggregate-name events] :as system}]
+  (doseq [{:keys [event-handler type]} (vals events)]
     (db/register-tx-fn type `(fn ~'[db-ctx event-ctx]
                                (let ~'[{:keys [event on-aggregate aggregate-id]} event-ctx]
                                  [[::xt/put (assoc (~event-handler ~'on-aggregate ~'event)
@@ -152,16 +152,6 @@
   [context error]
   (int/error context error))
 
-
-(defn build-event
-  [type event-body-fn]
-  {:name "build-event"
-   :enter (fn ^{:doc "interceptor that build and add an event to the context"}
-            [{:keys [aggregate-system aggregate-id] :as context}]
-            (let [event-builder (-> aggregate-system :event-registry type :builder)
-                  event (event-builder aggregate-id (event-body-fn context))]
-              (assoc context :event event)))})
-
 (defn register-commands! [system]
   (reduce-kv (fn [system command-name command]
                (assoc-in system [:commands command-name]
@@ -173,7 +163,7 @@
   (get-in system [:commands command-name]))
 
 (defn assoc-event-builders [system]
-  (update system :event-registry
+  (update system :events
           #(reduce-kv (fn [registry event-type event]
                         (assoc registry
                           event-type

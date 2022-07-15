@@ -17,6 +17,15 @@
           (mug-cmd/register-commands!))
       (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {}))))))
 
+(defn build-event
+  [type event-body-fn]
+  {:name "build-event"
+   :enter (fn ^{:doc "interceptor that build and add an event to the context"}
+            [{:keys [aggregate-system aggregate-id] :as context}]
+            (let [event-builder (-> aggregate-system :events type :builder)
+                  event (event-builder aggregate-id (event-body-fn context))]
+              (assoc context :event event)))})
+
 (defn find-one
   "Return a future of the given query"
   [query stream-version]

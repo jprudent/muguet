@@ -59,14 +59,14 @@
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
-   :event-registry {:flashcard/created {:body-schema flashcard-init-schema
-                                        :event-handler `apply-created-event}
-                    :flashcard/rated {:body-schema rating-schema
-                                      :event-handler `apply-rated-event}}
+   :events {:flashcard/created {:body-schema flashcard-init-schema
+                                :event-handler `apply-created-event}
+            :flashcard/rated {:body-schema rating-schema
+                              :event-handler `apply-rated-event}}
    :commands {:flashcard/create {:args-schema (mu/optional-keys flashcard-schema [:due-date])
-                                 :steps [(sut/build-event :flashcard/created :command-params)]}
+                                 :steps [(mug/build-event :flashcard/created :command-params)]}
               :flashcard/rate {:args-schema rating-schema
-                               :steps [(sut/build-event :flashcard/rated :command-params)]}}})
+                               :steps [(mug/build-event :flashcard/rated :command-params)]}}})
 
 (def flashcard-system (atom nil))
 
@@ -82,7 +82,6 @@
 
 (deftest create-flashcard-test
   (let [id 1
-        ;; todo find trick so we don't have to register commands in tests
         create-cmd (sut/get-command @flashcard-system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         stream-version (create-cmd id nil flashcard-init)
