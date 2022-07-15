@@ -12,7 +12,8 @@
   (reset! db/node (xt/start-node {}))
   (let [{:keys [schema] :as system} system]
     (if (meta/validate schema)
-      (-> (mug-cmd/register-events! system)
+      (-> (mug-cmd/assoc-event-builders system)
+          (mug-cmd/register-events!)
           (mug-cmd/register-commands!))
       (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {}))))))
 

@@ -167,3 +167,13 @@
 
 (defn get-command [system command-name]
   (get-in system [:commands command-name]))
+
+(defn assoc-event-builders [system]
+  (update system :event-registry
+          #(reduce-kv (fn [registry event-type event]
+                        (assoc registry
+                          event-type
+                          (-> event
+                              (assoc :type event-type)
+                              (assoc-event-builder))))
+                      % %)))
