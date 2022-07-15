@@ -52,6 +52,7 @@
   (fn [aggregate-id body]
     {:pre [(m/validate body-schema body)]}
     {:type type :body body :aggregate-id aggregate-id}))
+
 (defn assoc-event-builder
   [event]
   (assoc event :builder (make-event-builder event)))
@@ -102,25 +103,39 @@
         (clojure.tools.logging/error error-doc)
         [[::xt/put error-doc]]))))
 
+(defn validate-command-params
+  [schema]
+  {:name "validate-command-params"
+   :enter (fn [{:keys [command-params] :as context}]
+            (if (schema/validate schema command-params)
+              context
+              (let [explanation (schema/explain schema command-params)]
+                (int/error context
+                           {:status :invalid
+                            :error-message "Arguments are invalid"
+                            :details explanation}))))})
+
 (defn register-command
   ;; todo command-name is only there to get clean name, but it could be generated
-  [aggregate-system command-name user-interceptors]
-  (let [command-fn (fn [id stream-version command-params]
+  [aggregate-system command-name command]
+  (let [interceptors (concat [{:error (fn [_ctx error] {:error error
+                                                        ::muga/command-status ::muga/complete})}
+                              (validate-command-params (:args-schema command))]
+                             (:steps command)
+                             [(submit-event (keyword command-name))])
+        log-before (fn [stage-f execution-context]
+                     (int/before-stage stage-f
+                                       (fn [context]
+                                         (log/info "Before" (:name (:interceptor execution-context)) ":" (dissoc context :aggregate-system ::int/queue ::int/stack))
+                                         context)))
+        stages (int/into-stages interceptors [:enter] log-before)
+        command-fn (fn [id stream-version command-params]
                      (int/execute
                        {:aggregate-system aggregate-system
                         :aggregate-id id
                         :stream-version stream-version
                         :command-params command-params}
-                       (int/into-stages
-                         (concat [{:error (fn [_ctx error] {:error error
-                                                            ::muga/command-status ::muga/complete})}]
-                                 user-interceptors
-                                 [(submit-event (keyword command-name))])
-                         [:enter]
-                         (fn [stage-f execution-context]
-                           (int/before-stage stage-f (fn [context]
-                                                       (log/info "Before" (:name (:interceptor execution-context)) ":" (dissoc context :aggregate-system ::int/queue ::int/stack))
-                                                       context))))))]
+                       stages))]
     (db/register-tx-fn
       (keyword command-name)
       '(fn [db-ctx event-ctx] (muguet.internals.commands/event-tx-fn db-ctx event-ctx)))
@@ -137,17 +152,6 @@
   [context error]
   (int/error context error))
 
-(defn validate-command-params
-  [schema]
-  {:name "validate-command-params"
-   :enter (fn [{:keys [command-params] :as context}]
-            (if (schema/validate schema command-params)
-              context
-              (let [explanation (schema/explain schema command-params)]
-                (int/error context
-                           {:status :invalid
-                            :error-message "Arguments are invalid"
-                            :details explanation}))))})
 
 (defn build-event
   [type event-body-fn]
@@ -159,9 +163,9 @@
               (assoc context :event event)))})
 
 (defn register-commands! [system]
-  (reduce-kv (fn [system command-name interceptors]
+  (reduce-kv (fn [system command-name command]
                (assoc-in system [:commands command-name]
-                         (register-command system command-name interceptors)))
+                         (register-command system command-name command)))
              system
              (:commands system)))
 

@@ -59,14 +59,14 @@
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
-   :event-registry {:flashcard/rated {:body-schema rating-schema
-                                      :event-handler `apply-rated-event}
-                    :flashcard/created {:body-schema flashcard-init-schema
-                                        :event-handler `apply-created-event}}
-   :commands {:flashcard/create [(sut/validate-command-params (mu/optional-keys flashcard-schema [:due-date]))
-                                 (sut/build-event :flashcard/created :command-params)]
-              :flashcard/rate [(sut/validate-command-params rating-schema)
-                               (sut/build-event :flashcard/rated :command-params)]}})
+   :event-registry {:flashcard/created {:body-schema flashcard-init-schema
+                                        :event-handler `apply-created-event}
+                    :flashcard/rated {:body-schema rating-schema
+                                      :event-handler `apply-rated-event}}
+   :commands {:flashcard/create {:args-schema (mu/optional-keys flashcard-schema [:due-date])
+                                 :steps [(sut/build-event :flashcard/created :command-params)]}
+              :flashcard/rate {:args-schema rating-schema
+                               :steps [(sut/build-event :flashcard/rated :command-params)]}}})
 
 (def flashcard-system (atom nil))
 
