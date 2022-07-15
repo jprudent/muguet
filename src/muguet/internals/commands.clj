@@ -24,27 +24,34 @@
 
 ;; todo move this in public api
 ;; todo why is there an aggregate id mandatory ?
+;; todo have a single argument named `command-result`
 (defn fetch-command-result
   "Given a stream-version returned by a command (all commands ares asynchronous)
   and an aggregate-id, returns the status, event, aggregate or error "
   [stream-version id]
-  (let [;; fixme there will be a bug if some other command at stream-version+1 happened (won't find the element i think)
-        event (db/fetch-last-event-version stream-version id)
-        aggregate (db/fetch-aggregate-version stream-version id)]
-    (if (and event aggregate)
-      {:event event
-       :aggregate aggregate
-       ::muga/command-status ::muga/complete}
-      (if-let [error (db/fetch-error-version stream-version id)]
-        {:error error
+  ;; it can happen that the command fails outside the context of a database
+  ;; transaction
+  ;; todo can that happen for a command success ?
+  (if (= ::muga/complete (::muga/command-status stream-version))
+    stream-version
+    (let [;; fixme there will be a bug if some other command at stream-version+1 happened (won't find the element i think)
+          ;; fixme retrieving 2 documents smells like teen spirit (https://github.com/jprudent/muguet/issues/1)
+          event (db/fetch-last-event-version stream-version id)
+          aggregate (db/fetch-aggregate-version stream-version id)]
+      (if (and event aggregate)
+        {:event event
+         :aggregate aggregate
          ::muga/command-status ::muga/complete}
-        {::muga/command-status ::muga/pending}))))
+        (if-let [error (db/fetch-error-version stream-version id)]
+          {:error error
+           ::muga/command-status ::muga/complete}
+          {::muga/command-status ::muga/pending})))))
 
 (defn- make-event-builder
   [{:keys [type body-schema]}]
   (fn [aggregate-id body]
     {:pre [(m/validate body-schema body)]}
-    {:type type :body body :aggregate-id aggregate-id})) `é
+    {:type type :body body :aggregate-id aggregate-id}))
 (defn assoc-event-builder
   [event]
   (assoc event :builder (make-event-builder event)))
@@ -97,7 +104,7 @@
 
 (defn register-command
   ;; todo command-name is only there to get clean name, but it could be generated
-  [aggregate-system command-name interceptors]
+  [aggregate-system command-name user-interceptors]
   (let [command-fn (fn [id stream-version command-params]
                      (int/execute
                        {:aggregate-system aggregate-system
@@ -105,7 +112,10 @@
                         :stream-version stream-version
                         :command-params command-params}
                        (int/into-stages
-                         (into interceptors [(submit-event (keyword command-name))])
+                         (concat [{:error (fn [_ctx error] {:error error
+                                                            ::muga/command-status ::muga/complete})}]
+                                 user-interceptors
+                                 [(submit-event (keyword command-name))])
                          [:enter]
                          (fn [stage-f execution-context]
                            (int/before-stage stage-f (fn [context]
@@ -123,6 +133,10 @@
 ;; - transform :command-args to :event-body
 ;; - build event
 
+(defn error
+  [context error]
+  (int/error context error))
+
 (defn validate-command-params
   [schema]
   {:name "validate-command-params"
@@ -130,9 +144,10 @@
             (if (schema/validate schema command-params)
               context
               (let [explanation (schema/explain schema command-params)]
-                (assoc context :error {:status :invalid
-                                       :error-message "Arguments are invalid"
-                                       :details explanation}))))})
+                (int/error context
+                           {:status :invalid
+                            :error-message "Arguments are invalid"
+                            :details explanation}))))})
 
 (defn build-event
   [type event-body-fn]

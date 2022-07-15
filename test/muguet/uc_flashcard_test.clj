@@ -74,6 +74,7 @@
                                (sut/build-event :flashcard/rated :command-params)]}})
 
 (def flashcard-system (atom nil))
+
 ;; |=-----------------------------------------------------------------------=|
 ;; |=--------------------------=[ Flashcard Tests ]=------------------------=|
 ;; |=-----------------------------------------------------------------------=|
@@ -137,8 +138,13 @@
       (is (= 1 (count (remove error? res))) "only 1 command succeeds")
       (is (= 9 (count (filter error? res))) "9 commands failed"))))
 
-;; todo invalid version
 ;; todo invalid command args
+
+(deftest invalid-arguments-test
+  (let [create (sut/get-command @flashcard-system :flashcard/create)
+        v1 (create 1 nil nil)
+        res (tu/blocking-fetch-result v1 1)]
+    (is (= :invalid (get-in res [:error :status])))))
 
 (deftest rate-flashcard-test
   (let [id 1
