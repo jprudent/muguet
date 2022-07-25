@@ -22,6 +22,15 @@
         diehard/diehard {:mvn/version "0.11.3"}
         ;; -- interceptor executor
         exoscale/interceptor {:mvn/version "0.1.10"}
+
+        ;; todo move that to user config
+        ;; run locally :
+        ;; (require '[flow-storm.api :as fs-api])
+        ;; (fs-api/local-connect)
+        ;; documentation: https://jpmonettas.github.io/flow-storm-debugger/user_guide.html
+        com.github.jpmonettas/flow-storm-dbg {:mvn/version "RELEASE"}
+        com.github.jpmonettas/flow-storm-inst {:mvn/version "RELEASE"}
+
         }
 
  :aliases {:test {:extra-paths ["test"]

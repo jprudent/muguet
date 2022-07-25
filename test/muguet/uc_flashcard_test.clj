@@ -56,6 +56,28 @@
          :min 0
          :max 5}])
 
+(def pos-int [:int {:min 1}])
+
+;; todo all aggregations must be CamelCase
+(def MeanAggregation
+  [:map
+   [:number {:doc "The number of time the flashcard have been rated"} pos-int]
+   [:sum {:doc "The sum of all ratings"} pos-int]
+   [:mean {:doc "The result of the computation sum/number"} [:double {:min 0}]]])
+
+(defn mean
+  [aggregation rating]
+  (let [aggregation (-> (update aggregation :number inc)
+                        (update :sum + rating))]
+    (assoc aggregation :mean (double (/ (:sum aggregation) (:number aggregation))))))
+
+(defn mean-aggregation
+  [aggregation event]
+  (let [aggregation (or aggregation {:number 0 :sum 0})]
+    (if (= (:type event) :flashcard/rated)
+      (mean aggregation (:body event))
+      aggregation)))
+
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
@@ -66,7 +88,10 @@
    :commands {:flashcard/create {:args-schema (mu/optional-keys flashcard-schema [:due-date])
                                  :steps [(mug/build-event :flashcard/created :command-params)]}
               :flashcard/rate {:args-schema rating-schema
-                               :steps [(mug/build-event :flashcard/rated :command-params)]}}})
+                               :steps [(mug/build-event :flashcard/rated :command-params)]}}
+   :aggregations-per-aggregate-id {:flashcard/mean {:event-handler `mean-aggregation
+                                                    ;; todo test that the schema is checked
+                                                    :schema MeanAggregation}}})
 
 (def flashcard-system (atom nil))
 
@@ -132,8 +157,6 @@
       (is (= 1 (count (remove error? res))) "only 1 command succeeds")
       (is (= 9 (count (filter error? res))) "9 commands failed"))))
 
-;; todo invalid command args
-
 (deftest invalid-arguments-test
   (let [create (sut/get-command @flashcard-system :flashcard/create)
         v1 (create 1 nil nil)
@@ -184,7 +207,24 @@
     (is (= init-values (sort-by :id (map #(dissoc % :stream-version) all))))))
 
 
-(comment
-  (require 'unilog.config)
-  (unilog.config/start-logging! {:level :info
-                                 :overrides {"xtdb.tx" :debug}}))
+(deftest average-aggregation-test
+  (let [create (sut/get-command @flashcard-system :flashcard/create)
+        rate (sut/get-command @flashcard-system :flashcard/rate)
+        v1 (create 1 nil {:question "q?" :response "r" :id 1})
+        _ (is (nil? (sut/fetch-aggregation :flashcard/mean 1 v1)))
+        v2 (rate 1 v1 5)
+        ;; fixme need to wait for the aggregation to be updated
+        _ (Thread/sleep 1000)
+        _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
+                 (sut/fetch-aggregation :flashcard/mean 1 v2)))
+        v3 (rate 1 v2 0)
+        _ (Thread/sleep 1000)
+        _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
+                 (sut/fetch-aggregation :flashcard/mean 1 v3)))]
+    )
+
+  (require 'unilog.config))
+(unilog.config/start-logging! {:level :info
+                               :overrides {"xtdb.tx" :debug}})
+
+;; todo multisystem tests

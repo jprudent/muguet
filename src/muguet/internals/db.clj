@@ -6,9 +6,31 @@
 ;; todo set in system, not in a global var
 (defonce node (atom nil))
 
-#_(xt/listen @node {::xt/event-type ::xt/indexed-tx} prn)
+
+(defn- extract-events [xt-event]
+  (loop [acc []
+         ops (:xtdb.api/tx-ops xt-event)]
+    (if-let [[op-type doc op-param] (first ops)]
+      (case op-type
+        :xtdb.api/put
+        (if (= :muguet.api/event (:muguet.api/document-type doc))
+          (recur (conj acc doc) (rest ops))
+          (recur acc (rest ops)))
+        :xtdb.api/fn
+        (recur acc (into (rest ops) (:xtdb.api/tx-ops op-param))))
+      acc)))
+
+(defn- on-xt-event
+  ;; xt-event is not a muguet event, it's an event inside xtdb
+  [xt-event]
+  (prn "======" xt-event)
+  (when (:committed? xt-event)
+    (doseq [event (extract-events xt-event)]
+      (xt/submit-tx @node [[::xt/fn :aggregations event]]))))
 
 
+(defn listen []
+  (xt/listen @node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true} on-xt-event))
 
 (def event-ctx
   [:map
@@ -46,6 +68,7 @@
 (defn id->xt-aggregate-id [id] (str id "_aggregate"))
 (defn id->xt-last-event-id [id] (str id "_last_event"))
 (defn id->xt-error-id [id] (str id "_error"))
+(defn id->xt-aggregation-id [aggregation-name id] (str id "_" (name aggregation-name)))
 
 ;; todo all this functions should support pagination and ordering
 
@@ -63,6 +86,10 @@
   "Utility function that fetch an aggregate by id"
   [db id]
   (clean-doc (xt/entity db (id->xt-aggregate-id id))))
+
+(defn fetch-aggregation
+  [db aggregation-name id]
+  (clean-doc (xt/entity db (id->xt-aggregation-id aggregation-name id))))
 
 (defn fetch-event-history
   "Retrieve the all the events that have been applied on the aggregate"
@@ -116,3 +143,15 @@
             :where [[aggregate ::muga/aggregate-name aggregate-name]
                     [aggregate ::muga/document-type ::muga/aggregate]]}
           aggregate-name)))
+
+;; fixme in multi aggregate system there will be id conflicts
+(defn fetch-aggregation-version [aggregation-name id version]
+  (clean-doc
+    (ffirst
+      (xt/q (xt/db @node)
+            '{:find [(pull ?aggregation [*])]
+              :in [xt-id version]
+              :where [[?aggregation :xt/id xt-id]
+                      [?aggregation :stream-version version]]}
+            (id->xt-aggregation-id aggregation-name id)
+            version))))

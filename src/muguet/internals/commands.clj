@@ -171,3 +171,38 @@
                               (assoc :type event-type)
                               (assoc-event-builder))))
                       % %)))
+
+;; we don't need to check stream-version because events are called event after
+;; event, so they are indexed in that order
+(defn call-event-handler
+  [aggregation db-ctx event]
+  (let [{:keys [aggregate-id]} event
+        [aggr-name aggr-desc] aggregation
+        {:keys [event-handler]} aggr-desc
+        db (xt/db db-ctx)
+        existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
+    ;; todo check schema of the aggregation here
+    [[::xt/put (assoc (event-handler existing-aggregation event)
+                 :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
+                 :stream-version (:stream-version event))]]))
+
+(defn register-aggregations!
+  [system]
+  (when-let [aggregations (not-empty (get system :aggregations-per-aggregate-id))]
+    (doseq [aggregation aggregations]
+      ;; this function put new version of the aggregation
+      (db/register-tx-fn
+        (first aggregation)
+        `(fn ~'[db-ctx event-ctx] (muguet.internals.commands/call-event-handler ~aggregation ~'db-ctx ~'event-ctx))))
+    ;; this is the function that is called top level by the listener
+    (db/register-tx-fn :aggregations
+                       `(fn ~'[db-ctx event-ctx]
+                          (vec (map (fn ~'[aggr-name]
+                                      [:xtdb.api/fn ~'aggr-name ~'event-ctx])
+                                    ~(vec (keys aggregations)))))))
+  (db/listen)
+  system)
+
+(defn fetch-aggregation
+  [aggregation-name id version]
+  (db/fetch-aggregation-version aggregation-name id version))
