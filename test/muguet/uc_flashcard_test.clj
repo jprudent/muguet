@@ -11,9 +11,13 @@
             [muguet.internals.views :as views]
             [muguet.test-utils :as tu]
             [muguet.utils :as mugu]
+            [unilog.config :as log-conf]
             [xtdb.api :as xt])
   (:import (java.time LocalDateTime)
            (java.util.concurrent CountDownLatch ExecutorService Executors)))
+
+(log-conf/start-logging! {:level :info
+                          :overrides {"muguet.core" :debug}})
 
 
 ;; todo run those test against different persistence mechanisms
@@ -81,6 +85,7 @@
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
+   ;; todo event-handlers are aggregations, and must be treated as such, not mixed in event definitions
    :events {:flashcard/created {:body-schema flashcard-init-schema
                                 :event-handler `apply-created-event}
             :flashcard/rated {:body-schema rating-schema
@@ -89,9 +94,30 @@
                                  :steps [(mug/build-event :flashcard/created :command-params)]}
               :flashcard/rate {:args-schema rating-schema
                                :steps [(mug/build-event :flashcard/rated :command-params)]}}
-   :aggregations-per-aggregate-id {:flashcard/mean {:event-handler `mean-aggregation
-                                                    ;; todo test that the schema is checked
-                                                    :schema MeanAggregation}}})
+
+   ;; An aggregation is a read model dedicated to a particular view of the application
+   ;; An aggregation is updated for each event that is issued.
+   ;; The difference between a query and an aggregation is that an aggregation
+   ;; doesn't need any computation, similar in that aspect of a cache entry.
+   ;; Aggregations are versioned in the database like event stream and aggregate.
+
+   ;; Aggregations update can be transactional or asynchronous
+   ;; - Transactional is the default. The aggregation gets updated at the same time
+   ;;   than the event is issued. Transactional aggregations are always up to date.
+   ;;   pros: synchronicity is simpler
+   ;;   cons: transactions take more time
+   ;; - Asynchronous. The aggregation gets updated some time later, uncoupled
+   ;;   with the event that should update the aggregation.
+
+   ;; Here `-transactional` and `-async` suffixes are appended to the
+   ;; aggregation name to make things clearer in my test case. There is no
+   ;; conventions whatsoever.
+   :aggregations-per-aggregate-id {:flashcard/mean-transactional {:event-handler `mean-aggregation
+                                                                  ;; todo test that the schema is checked
+                                                                  :schema MeanAggregation}
+                                   :flashcard/mean-async {:event-handler `mean-aggregation
+                                                          :schema MeanAggregation
+                                                          :async true}}})
 
 (def flashcard-system (atom nil))
 
@@ -110,7 +136,7 @@
         create-cmd (sut/get-command @flashcard-system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         stream-version (create-cmd id nil flashcard-init)
-        {:keys [aggregate event ::muga/command-status]} (tu/blocking-fetch-result stream-version id)
+        {:keys [aggregate event ::muga/command-status]} (tu/blocking-fetch-command-result stream-version id)
         expected-event {:type :flashcard/created
                         :aggregate-id id
                         :body flashcard-init}]
@@ -130,7 +156,7 @@
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (create-cmd 1 nil flashcard-init)
-        res2 (tu/blocking-fetch-result v2 1)]
+        res2 (tu/blocking-fetch-command-result v2 1)]
     (is (= v1 (get-in res2 [:error :details :actual])))
     (is (= nil (get-in res2 [:error :details :expected])))))
 
@@ -151,7 +177,7 @@
                                                               (.await latch)
                                                               ;; go !
                                                               (create-cmd 1 nil flashcard-init))))
-          res (mapv (fn [future] (tu/blocking-fetch-result @future 1)) futures)
+          res (mapv (fn [future] (tu/blocking-fetch-command-result @future 1)) futures)
           error? #(contains? % :error)]
       (is (every? (fn [r] (= ::muga/complete (::muga/command-status r))) res) "every command can retrieve a result")
       (is (= 1 (count (remove error? res))) "only 1 command succeeds")
@@ -160,7 +186,7 @@
 (deftest invalid-arguments-test
   (let [create (sut/get-command @flashcard-system :flashcard/create)
         v1 (create 1 nil nil)
-        res (tu/blocking-fetch-result v1 1)]
+        res (tu/blocking-fetch-command-result v1 1)]
     (is (= :invalid (get-in res [:error :status])))))
 
 (deftest rate-flashcard-test
@@ -168,14 +194,14 @@
         create-cmd (sut/get-command @flashcard-system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         version (create-cmd id nil flashcard-init)
-        create-result (tu/blocking-fetch-result version id)
+        create-result (tu/blocking-fetch-command-result version id)
         created-event (:event create-result)
         _ (is (= :muguet.api/complete (:muguet.api/command-status create-result)))
 
         rate-cmd (sut/get-command @flashcard-system :flashcard/rate)
         rating 4
         cmd-result (rate-cmd id version rating)
-        {fc-rated :aggregate rated-event :event} (tu/blocking-fetch-result cmd-result id)]
+        {fc-rated :aggregate rated-event :event} (tu/blocking-fetch-command-result cmd-result id)]
     (is (= {:type :flashcard/rated
             :aggregate-id id
             :body rating}
@@ -191,7 +217,7 @@
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (rate-cmd 1 v1 5)
-        result (tu/blocking-fetch-result (rate-cmd 1 v1 3) 1)]
+        result (tu/blocking-fetch-command-result (rate-cmd 1 v1 3) 1)]
     (is (= v2 (get-in result [:error :details :actual])))
     (is (= v1 (get-in result [:error :details :expected])))))
 
@@ -200,31 +226,45 @@
   (let [create (sut/get-command @flashcard-system :flashcard/create)
         init-values (map (fn [id] {:question "q?" :response "r" :id id}) (range 10))
         results (map (fn [init-value]
-                       (let [future-res (create (:id init-value) nil init-value)]
-                         (tu/blocking-fetch-result future-res (:id init-value))))
+                       (let [version (create (:id init-value) nil init-value)]
+                         (tu/blocking-fetch-command-result version (:id init-value))))
                      init-values)
         all (views/all (last results) @flashcard-system)]
     (is (= init-values (sort-by :id (map #(dissoc % :stream-version) all))))))
 
+(deftest mean-aggregation-transactional-test
+  (let [create (sut/get-command @flashcard-system :flashcard/create)
+        rate (sut/get-command @flashcard-system :flashcard/rate)
 
-(deftest average-aggregation-test
+        v1 (create 1 nil {:question "q?" :response "r" :id 1})
+        _ (is (tu/blocking-fetch-command-result v1 1))
+        _ (is (= {:number 0 :sum 0}
+                 (dissoc (sut/fetch-aggregation :flashcard/mean-transactional 1 v1) :stream-version)))
+
+        v2 (rate 1 v1 5)
+        _ (tu/blocking-fetch-command-result v2 1)
+        _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
+                 (sut/fetch-aggregation :flashcard/mean-transactional 1 v2)))
+
+        v3 (rate 1 v2 0)
+        _ (tu/blocking-fetch-command-result v3 1)
+        _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
+                 (sut/fetch-aggregation :flashcard/mean-transactional 1 v3)))]))
+
+(deftest mean-aggregation-async-test
   (let [create (sut/get-command @flashcard-system :flashcard/create)
         rate (sut/get-command @flashcard-system :flashcard/rate)
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
-        _ (is (nil? (sut/fetch-aggregation :flashcard/mean 1 v1)))
+        _ (is (nil? (sut/fetch-aggregation :flashcard/mean-async 1 v1)))
         v2 (rate 1 v1 5)
-        ;; fixme need to wait for the aggregation to be updated
-        _ (Thread/sleep 1000)
+        ;; The aggregation update gets delayed, so we wait a bit ...
+        ;; todo don't use Thread/sleep
+        _ (Thread/sleep 100)
         _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
-                 (sut/fetch-aggregation :flashcard/mean 1 v2)))
+                 (sut/fetch-aggregation :flashcard/mean-async 1 v2)))
         v3 (rate 1 v2 0)
-        _ (Thread/sleep 1000)
+        _ (Thread/sleep 100)
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
-                 (sut/fetch-aggregation :flashcard/mean 1 v3)))]
-    )
-
-  (require 'unilog.config))
-(unilog.config/start-logging! {:level :info
-                               :overrides {"xtdb.tx" :debug}})
+                 (sut/fetch-aggregation :flashcard/mean-async 1 v3)))]))
 
 ;; todo multisystem tests

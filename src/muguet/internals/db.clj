@@ -20,17 +20,16 @@
         (recur acc (into (rest ops) (:xtdb.api/tx-ops op-param))))
       acc)))
 
-(defn- on-xt-event
-  ;; xt-event is not a muguet event, it's an event inside xtdb
-  [xt-event]
-  (prn "======" xt-event)
-  (when (:committed? xt-event)
-    (doseq [event (extract-events xt-event)]
-      (xt/submit-tx @node [[::xt/fn :aggregations event]]))))
 
 
-(defn listen []
-  (xt/listen @node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true} on-xt-event))
+(defn listen-events [on-event]
+  (xt/listen @node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
+             (fn
+               ;; xt-event is not a muguet event, it's an event inside xtdb
+               [xt-event]
+               (when (:committed? xt-event)
+                 (doseq [event (extract-events xt-event)]
+                   (on-event event))))))
 
 (def event-ctx
   [:map

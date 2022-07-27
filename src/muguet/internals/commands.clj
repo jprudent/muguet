@@ -57,16 +57,18 @@
   [event]
   (assoc event :builder (make-event-builder event)))
 
-(defn register-events!
+(defn register-event-handlers!
   [{:keys [aggregate-name events] :as system}]
   (doseq [{:keys [event-handler type]} (vals events)]
-    (db/register-tx-fn type `(fn ~'[db-ctx event-ctx]
-                               (let ~'[{:keys [event on-aggregate aggregate-id]} event-ctx]
-                                 [[::xt/put (assoc (~event-handler ~'on-aggregate ~'event)
-                                              :xt/id (muguet.internals.db/id->xt-aggregate-id ~'aggregate-id)
-                                              ::muga/aggregate-name ~aggregate-name
-                                              ::muga/document-type ::muga/aggregate
-                                              :stream-version (:indexing-tx ~'db-ctx))]]))))
+    (db/register-tx-fn
+      type
+      `(fn ~'[db-ctx event-ctx]
+         (let ~'[{:keys [event on-aggregate aggregate-id]} event-ctx]
+           [[::xt/put (assoc (~event-handler ~'on-aggregate ~'event)
+                        :xt/id (muguet.internals.db/id->xt-aggregate-id ~'aggregate-id)
+                        ::muga/aggregate-name ~aggregate-name
+                        ::muga/document-type ::muga/aggregate
+                        :stream-version (:indexing-tx ~'db-ctx))]]))))
   system)
 
 (defn submit-event
@@ -80,17 +82,21 @@
                                                                      :stream-version])]]))})
 
 (defn event-tx-fn
-  [db-ctx event-ctx]
+  [db-ctx event-ctx aggregations]
   (let [{:keys [event aggregate-name aggregate-id stream-version]} event-ctx
         db (xt/db db-ctx)
         existing-aggregate (muguet.internals.db/fetch-aggregate db aggregate-id)]
     (if (= stream-version (:stream-version existing-aggregate))
-      [[::xt/put (assoc event
-                   :xt/id (muguet.internals.db/id->xt-last-event-id aggregate-id)
-                   ::muga/aggregate-name aggregate-name
-                   ::muga/document-type ::muga/event
-                   :stream-version (:indexing-tx db-ctx))]
-       [::xt/fn (-> event :type) (assoc event-ctx :on-aggregate existing-aggregate)]]
+      (let [event (assoc event
+                    :xt/id (muguet.internals.db/id->xt-last-event-id aggregate-id)
+                    ::muga/aggregate-name aggregate-name
+                    ::muga/document-type ::muga/event
+                    :stream-version (:indexing-tx db-ctx))]
+        (into
+          [[::xt/put event]
+           ;; todo on-aggregate could be computed in the function
+           [::xt/fn (-> event :type) (assoc event-ctx :on-aggregate existing-aggregate)]]
+          (vec (map (fn [aggr-name] [:xtdb.api/fn aggr-name event]) (keys aggregations)))))
       (let [error-doc {:xt/id (muguet.internals.db/id->xt-error-id aggregate-id)
                        :stream-version (:indexing-tx db-ctx)
                        ;; todo change error message: this is a conflict
@@ -135,10 +141,16 @@
                         :aggregate-id id
                         :stream-version stream-version
                         :command-params command-params}
-                       stages))]
+                       stages))
+        tx-aggrs (reduce-kv (fn [tx-aggrs aggr-name {:keys [async] :as aggr-def}]
+                              (if (true? async)
+                                tx-aggrs
+                                (assoc tx-aggrs aggr-name aggr-def)))
+                            {} (:aggregations-per-aggregate-id aggregate-system))]
     (db/register-tx-fn
       (keyword command-name)
-      '(fn [db-ctx event-ctx] (muguet.internals.commands/event-tx-fn db-ctx event-ctx)))
+      `(fn ~'[db-ctx event-ctx]
+         (muguet.internals.commands/event-tx-fn ~'db-ctx ~'event-ctx ~tx-aggrs)))
     command-fn))
 
 ;; typical command interceptor chain:
@@ -182,6 +194,7 @@
         db (xt/db db-ctx)
         existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
     ;; todo check schema of the aggregation here
+    (prn "===" event (:stream-version event))
     [[::xt/put (assoc (event-handler existing-aggregation event)
                  :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
                  :stream-version (:stream-version event))]]))
@@ -189,18 +202,29 @@
 (defn register-aggregations!
   [system]
   (when-let [aggregations (not-empty (get system :aggregations-per-aggregate-id))]
+    ;; register all functions that update aggregations
+    ;; there is one such function per aggregation, be it async or not
     (doseq [aggregation aggregations]
       ;; this function put new version of the aggregation
       (db/register-tx-fn
         (first aggregation)
-        `(fn ~'[db-ctx event-ctx] (muguet.internals.commands/call-event-handler ~aggregation ~'db-ctx ~'event-ctx))))
-    ;; this is the function that is called top level by the listener
-    (db/register-tx-fn :aggregations
-                       `(fn ~'[db-ctx event-ctx]
-                          (vec (map (fn ~'[aggr-name]
-                                      [:xtdb.api/fn ~'aggr-name ~'event-ctx])
-                                    ~(vec (keys aggregations)))))))
-  (db/listen)
+        `(fn ~'[db-ctx event] (muguet.internals.commands/call-event-handler ~aggregation ~'db-ctx ~'event))))
+
+    ;; register the function that updates all async aggregations
+    ;; it calls all functions that update async aggregations
+    (let [async-aggrs (reduce-kv (fn [async-aggrs aggr-name {:keys [async] :as aggr-def}]
+                                   (if (true? async)
+                                     (assoc async-aggrs aggr-name aggr-def)
+                                     async-aggrs))
+                                 {} aggregations)]
+      (db/register-tx-fn :update-async-aggregations
+                         `(fn ~'[db-ctx event-ctx]
+                            (vec (map (fn ~'[aggr-name]
+                                        [:xtdb.api/fn ~'aggr-name ~'event-ctx])
+                                      ~(vec (keys async-aggrs))))))))
+
+  ;; when an event is indexed, trigger the update of aggregations
+  (db/listen-events #(xt/submit-tx @db/node [[::xt/fn :update-async-aggregations %]]))
   system)
 
 (defn fetch-aggregation
