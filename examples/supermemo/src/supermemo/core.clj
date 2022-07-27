@@ -1,5 +1,6 @@
 (ns supermemo.core
   (:require [muguet.core :as mug]
+            [muguet.internals.db :as db]
             [muguet.utils :as mugu]
             [sm2-plus :as sm2]
             [xtdb.api :as xt]))
@@ -26,33 +27,42 @@
 
 (prn (or (mugu/check-schema flashcard) "no problem with schema"))
 
+(def systems [{:schema flashcard
+               :id-provider (fn [_x] (random-uuid))
+               :aggregate-name :flashcard}])
 
 (defprotocol
-  FlashcardService
-  (draw [this])
-  (rate [this flashcard rating]))
+ FlashcardService
+ (draw [this version])
+ (rate [this flashcard rating]))
 
 (defrecord FlashcardServiceStub []
            FlashcardService
-           (draw [_this]
+           (draw [_this _version]
                  (mugu/gen-aggregate flashcard))
            (rate [_this flashcard rating]
                  (update flashcard :learn-map #(sm2/calculate rating %))))
 
+(def max-overdue-query
+  '{:find [(pull p [*])]
+    :where [[(q '{:find [(max (get learn-map :percent-overdue))]
+                  :where [[p :learn-map learn-map]]}) [[max-po]]]
+            [p :learn-map learn-map]
+            [(get learn-map :percent-overdue) po]
+            [(= po max-po)]]
+    :limit 1})
+
 (defrecord FlashcardServiceXtdb [node]
            FlashcardService
-           (draw [_this]
+           (draw [_this stream-version]
                  ;; todo ensure previous rating has been indexed before running the query
-                 ;; todo what could be nice is a "read view" for that query
-                 (ffirst (xt/q (xt/db node)
-                               '{:find [(pull p [*])]
-                                 :where [[(q '{:find [(max (get learn-map :percent-overdue))]
-                                               :where [[p :learn-map learn-map]]}) [[max-po]]]
-                                         [p :learn-map learn-map]
-                                         [(get learn-map :percent-overdue) po]
-                                         [(= po max-po)]]
-                                 :limit 1})))
-           (rate [this flashcard rating]
+                 (let [future-response (mug/find-one max-overdue-query stream-version)
+                       flashcard (deref future-response 1000 nil)]
+                      (if flashcard
+                        flashcard
+                        (do (future-cancel future-response)
+                            (throw (ex-info "Can't find flashcard in reasonable time" {:stream-version stream-version}))))))
+           (rate [_this flashcard rating]
                  (xt/submit-tx node [[::xt/put (update flashcard :learn-map #(sm2/calculate rating %))]])))
 
 (defn print-question [flashcard]
@@ -75,16 +85,17 @@
       (loop [flashcard (draw svc)]
             (when flashcard
                   (print-question flashcard)
-                  (let [rating (capture-user-rating)]
-                       (rate svc flashcard rating))
-                  (recur (draw svc)))))
+                  (let [rating (capture-user-rating)
+                        aggregate-version (rate svc flashcard rating)]
+                       ;; todo the db should process the transaction before draw again, because same flashcard will be drawn again
+                       (recur (draw svc aggregate-version))))))
 
 (defn -main [& _args]
-      (main (->FlashcardServiceXtdb (xt/start-node {}))))
+      (main (->FlashcardServiceXtdb @db/node)))
 
 
 (comment
-  (doseq [sample (repeatedly 100 #(mugu/gen-aggregate flashcard))]
-         (mug/hatch sample {:schema flashcard
-                            :id-provider (fn [_x] (random-uuid))
-                            :aggregate-name :flashcard})))
+ (do
+   (mug/start! systems)
+   (doseq [sample (repeatedly 10 #(mugu/gen-aggregate flashcard))]
+          (mug/hatch sample (first systems)))))

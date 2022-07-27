@@ -1,9 +1,10 @@
 (ns muguet.internals.commands
   "those are out of the box commands provided by muguet"
-  (:require [malli.error :as me]
+  (:require [clojure.tools.logging :as log]
+            [exoscale.interceptor :as int]
+            [malli.core :as m]
             [muguet.api :as muga]
             [muguet.internals.db :as db]
-            [muguet.internals.meta-schemas :as meta]
             [muguet.internals.schema :as schema]
             [xtdb.api :as xt]))
 
@@ -21,103 +22,211 @@
 ;; fire family, such command will emit as many events as there is fire
 ;; pokemon cards.
 
-;; todo do that in an initialization code
-;; todo hard coded kw
-(defn register-event-handlers
-  []
-  (db/register-event-handler
-    (keyword (name :pokemon-card) "hatched")
-    ;; for now this is generic providing we added the id in the command,
-    ;; which seems reasonable
-    ;; todo provide a mechanism to let user define its own transactions
-    '(fn [db-ctx event-ctx]
-       (let [db (xtdb.api/db db-ctx)
-             id (-> event-ctx :aggregate :id)
-             aggregate-name (:aggregate-name event-ctx)
-             existing-aggregate (muguet.internals.db/fetch-aggregate db id)]
-         (if (= existing-aggregate (:on-aggregate event-ctx))
-           [[::xt/put (assoc (:aggregate event-ctx)
-                        :xt/id (muguet.internals.db/id->xt-aggregate-id id)
-                        ;; todo shouldn't be muga bc it's not part of public api
-                        ::muga/aggregate-name aggregate-name
-                        ;; todo shouldn't be muga bc it's not part of public api
-                        ::muga/document-type ::muga/aggregate
-                        ;; todo rename stream-version ::muga/stream-version
-                        :stream-version (:indexing-tx db-ctx))]
-            ;; event history can be retrieved from the history of this document
-            [::xt/put (assoc (:event event-ctx)
-                        :xt/id (muguet.internals.db/id->xt-last-event-id id)
-                        ::muga/aggregate-name aggregate-name
-                        ::muga/document-type ::muga/event
-                        :stream-version (:indexing-tx db-ctx))]]
-           ;; put an error document so error can be retrieved from command
-           ;; this could also be implemented with a "registy" of promises but
-           ;; that's a state to maintain
-           (let [error-doc {:xt/id (muguet.internals.db/id->xt-error-id id)
-                            :stream-version (:indexing-tx db-ctx)
-                            ;; todo change error message: this is a conflict
-                            :status ::muga/not-found
-                            ::muga/aggregate-name aggregate-name
-                            ::muga/document-type ::muga/error
-                            :message "the specified aggregate version couldn't be find"
-                            :details {:actual existing-aggregate
-                                      :expected (:on-aggregate event-ctx)}}]
-             (clojure.tools.logging/error error-doc)
-             [[::xt/put error-doc]]))))))
-
-;; TODO rename initialize ? or identify
-(defn hatch
-  "Creation is always a weird time. Think how a baby was born. Does he have
-  all the attribute that would qualify him as a complete human ? No, still
-  someone named him. He gets identity, he exists.
-  When creating an aggregate-root for your domain, it may be incomplete. Some
-  attribute values may be missing. But that's ok, it's tolerated. At that point
-  of the CRUD lifecycle every attribute are optional.
-  If some attributes are provided, they are checked against their respective schema."
-
-  ;; TODO implement "required" attributes for hatch time
-  ;;      it's different from required/optional attribute schema
-  ;;      may be name it "mandatory" or "enforced"
-
-  [attributes {:keys [schema id-provider aggregate-name] :as collection-system}]
-  {:malli/schema [:=> [[:maybe map?] [:map [:schema meta/meta-coll-schema
-                                            ;; todo let's remove the id-provider, the client must provide id
-                                            :id-provider {:doc "injection of any strategy for id generation"} fn?]]]
-                  muga/api-return-schema]}
-  (let [optional-schema (schema/optional schema)
-        id (id-provider attributes)
-        aggregate (assoc attributes :id id)]
-    (if (schema/validate optional-schema aggregate)
-      ;; fixme there is serious flaw here where the events are not inserted atomically
-      ;;       solution is to insert the whole vector in the same transaction
-      ;;       but we got same version for 2 different aggregate/last-event hummmmmm
-      {:version (db/insert-async {:on-aggregate nil
-                                  :event (->event (keyword (name aggregate-name) "hatched") aggregate)
-                                  :aggregate aggregate
-                                  :aggregate-name aggregate-name})
-       ::muga/command-status ::muga/pending}
-      {:error {:status ::muga/invalid
-               ;; TODO the error message must be more precise, explaining
-               ;;      which attributes, and why
-               :message "Invalid attributes"
-               ;; TODO give complete coordinate of the error
-               :details (me/humanize (schema/explain optional-schema aggregate))}
-       ::muga/command-status ::muga/complete})))
-
+;; todo move this in public api
+;; todo why is there an aggregate id mandatory ?
+;; todo have a single argument named `command-result`
 (defn fetch-command-result
-  [version id]
-  (let [;; fixme there will be a bug if some other command at version+1 happened (won't find the element i think)
-        event (db/fetch-last-event-version version id)
-        aggregate (db/fetch-aggregate-version version id)]
-    (if (and event aggregate)
-      {:event event
-       :aggregate aggregate
-       ::muga/command-status ::muga/complete}
-      (if-let [error (db/fetch-error-version version id)]
-        {:error error
+  "Given a stream-version returned by a command (all commands ares asynchronous)
+  and an aggregate-id, returns the status, event, aggregate or error "
+  [stream-version id]
+  ;; it can happen that the command fails outside the context of a database
+  ;; transaction
+  ;; todo can that happen for a command success ?
+  (if (= ::muga/complete (::muga/command-status stream-version))
+    stream-version
+    (let [;; fixme there will be a bug if some other command at stream-version+1 happened (won't find the element i think)
+          ;; fixme retrieving 2 documents smells like teen spirit (https://github.com/jprudent/muguet/issues/1)
+          event (db/fetch-last-event-version stream-version id)
+          aggregate (db/fetch-aggregate-version stream-version id)]
+      (if (and event aggregate)
+        {:event event
+         :aggregate aggregate
          ::muga/command-status ::muga/complete}
-        {::muga/command-status ::muga/pending}))))
+        (if-let [error (db/fetch-error-version stream-version id)]
+          {:error error
+           ::muga/command-status ::muga/complete}
+          {::muga/command-status ::muga/pending})))))
 
-;; For those unconvinced by the metaphor
-(def create hatch)
-(def init hatch)
+(defn- make-event-builder
+  [{:keys [type body-schema]}]
+  (fn [aggregate-id body]
+    {:pre [(m/validate body-schema body)]}
+    {:type type :body body :aggregate-id aggregate-id}))
+
+(defn assoc-event-builder
+  [event]
+  (assoc event :builder (make-event-builder event)))
+
+(defn register-event-handlers!
+  [{:keys [aggregate-name events] :as system}]
+  (doseq [{:keys [event-handler type]} (vals events)]
+    (db/register-tx-fn
+      type
+      `(fn ~'[db-ctx event-ctx]
+         (let ~'[{:keys [event on-aggregate aggregate-id]} event-ctx]
+           [[::xt/put (assoc (~event-handler ~'on-aggregate ~'event)
+                        :xt/id (muguet.internals.db/id->xt-aggregate-id ~'aggregate-id)
+                        ::muga/aggregate-name ~aggregate-name
+                        ::muga/document-type ::muga/aggregate
+                        :stream-version (:indexing-tx ~'db-ctx))]]))))
+  system)
+
+(defn submit-event
+  [f]
+  {:name "submit-event"
+   :enter (fn [context]
+            (when (not (:event context)) (throw (ex-info "Can't submit event. Missing event in context." context)))
+            (xt/submit-tx @db/node [[::xt/fn f (select-keys context [:event
+                                                                     :aggregate-name
+                                                                     :aggregate-id
+                                                                     :stream-version])]]))})
+
+(defn event-tx-fn
+  [db-ctx event-ctx aggregations]
+  (let [{:keys [event aggregate-name aggregate-id stream-version]} event-ctx
+        db (xt/db db-ctx)
+        existing-aggregate (muguet.internals.db/fetch-aggregate db aggregate-id)]
+    (if (= stream-version (:stream-version existing-aggregate))
+      (let [event (assoc event
+                    :xt/id (muguet.internals.db/id->xt-last-event-id aggregate-id)
+                    ::muga/aggregate-name aggregate-name
+                    ::muga/document-type ::muga/event
+                    :stream-version (:indexing-tx db-ctx))]
+        (into
+          [[::xt/put event]
+           ;; todo on-aggregate could be computed in the function
+           [::xt/fn (-> event :type) (assoc event-ctx :on-aggregate existing-aggregate)]]
+          (vec (map (fn [aggr-name] [:xtdb.api/fn aggr-name event]) (keys aggregations)))))
+      (let [error-doc {:xt/id (muguet.internals.db/id->xt-error-id aggregate-id)
+                       :stream-version (:indexing-tx db-ctx)
+                       ;; todo change error message: this is a conflict
+                       :status ::muga/not-found
+                       ::muga/aggregate-name aggregate-name
+                       ::muga/document-type ::muga/error
+                       :message "the specified aggregate version couldn't be find"
+                       :details {:actual (:stream-version existing-aggregate)
+                                 :expected stream-version}}]
+        (clojure.tools.logging/error error-doc)
+        [[::xt/put error-doc]]))))
+
+(defn validate-command-params
+  [schema]
+  {:name "validate-command-params"
+   :enter (fn [{:keys [command-params] :as context}]
+            (if (schema/validate schema command-params)
+              context
+              (let [explanation (schema/explain schema command-params)]
+                (int/error context
+                           {:status :invalid
+                            :error-message "Arguments are invalid"
+                            :details explanation}))))})
+
+(defn register-command
+  ;; todo command-name is only there to get clean name, but it could be generated
+  [aggregate-system command-name command]
+  (let [interceptors (concat [{:error (fn [_ctx error] {:error error
+                                                        ::muga/command-status ::muga/complete})}
+                              (validate-command-params (:args-schema command))]
+                             (:steps command)
+                             [(submit-event (keyword command-name))])
+        log-before (fn [stage-f execution-context]
+                     (int/before-stage stage-f
+                                       (fn [context]
+                                         (log/info "Before" (:name (:interceptor execution-context)) ":" (dissoc context :aggregate-system ::int/queue ::int/stack))
+                                         context)))
+        stages (int/into-stages interceptors [:enter] log-before)
+        command-fn (fn [id stream-version command-params]
+                     (int/execute
+                       {:aggregate-system aggregate-system
+                        :aggregate-id id
+                        :stream-version stream-version
+                        :command-params command-params}
+                       stages))
+        tx-aggrs (reduce-kv (fn [tx-aggrs aggr-name {:keys [async] :as aggr-def}]
+                              (if (true? async)
+                                tx-aggrs
+                                (assoc tx-aggrs aggr-name aggr-def)))
+                            {} (:aggregations-per-aggregate-id aggregate-system))]
+    (db/register-tx-fn
+      (keyword command-name)
+      `(fn ~'[db-ctx event-ctx]
+         (muguet.internals.commands/event-tx-fn ~'db-ctx ~'event-ctx ~tx-aggrs)))
+    command-fn))
+
+;; typical command interceptor chain:
+;; - validate command args (schema)
+;; - optional: retrieve the reference `:aggregate`
+;; - optional: custom business validations (can use `:aggregate`)
+;; - transform :command-args to :event-body
+;; - build event
+
+(defn error
+  [context error]
+  (int/error context error))
+
+(defn register-commands! [system]
+  (reduce-kv (fn [system command-name command]
+               (assoc-in system [:commands command-name]
+                         (register-command system command-name command)))
+             system
+             (:commands system)))
+
+(defn get-command [system command-name]
+  (get-in system [:commands command-name]))
+
+(defn assoc-event-builders [system]
+  (update system :events
+          #(reduce-kv (fn [registry event-type event]
+                        (assoc registry
+                          event-type
+                          (-> event
+                              (assoc :type event-type)
+                              (assoc-event-builder))))
+                      % %)))
+
+;; we don't need to check stream-version because events are called event after
+;; event, so they are indexed in that order
+(defn call-event-handler
+  [aggregation db-ctx event]
+  (let [{:keys [aggregate-id]} event
+        [aggr-name aggr-desc] aggregation
+        {:keys [event-handler]} aggr-desc
+        db (xt/db db-ctx)
+        existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
+    ;; todo check schema of the aggregation here
+    (prn "===" event (:stream-version event))
+    [[::xt/put (assoc (event-handler existing-aggregation event)
+                 :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
+                 :stream-version (:stream-version event))]]))
+
+(defn register-aggregations!
+  [system]
+  (when-let [aggregations (not-empty (get system :aggregations-per-aggregate-id))]
+    ;; register all functions that update aggregations
+    ;; there is one such function per aggregation, be it async or not
+    (doseq [aggregation aggregations]
+      ;; this function put new version of the aggregation
+      (db/register-tx-fn
+        (first aggregation)
+        `(fn ~'[db-ctx event] (muguet.internals.commands/call-event-handler ~aggregation ~'db-ctx ~'event))))
+
+    ;; register the function that updates all async aggregations
+    ;; it calls all functions that update async aggregations
+    (let [async-aggrs (reduce-kv (fn [async-aggrs aggr-name {:keys [async] :as aggr-def}]
+                                   (if (true? async)
+                                     (assoc async-aggrs aggr-name aggr-def)
+                                     async-aggrs))
+                                 {} aggregations)]
+      (db/register-tx-fn :update-async-aggregations
+                         `(fn ~'[db-ctx event-ctx]
+                            (vec (map (fn ~'[aggr-name]
+                                        [:xtdb.api/fn ~'aggr-name ~'event-ctx])
+                                      ~(vec (keys async-aggrs))))))))
+
+  ;; when an event is indexed, trigger the update of aggregations
+  (db/listen-events #(xt/submit-tx @db/node [[::xt/fn :update-async-aggregations %]]))
+  system)
+
+(defn fetch-aggregation
+  [aggregation-name id version]
+  (db/fetch-aggregation-version aggregation-name id version))

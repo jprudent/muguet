@@ -19,6 +19,11 @@
    :collection/display-name (str/capitalize aggregate-name)})
 
 (defn gen-aggregate
-  "Generate an aggregate based on the schema. Useful for mockups and tests."
-  [schema & {:as opts}]
-  (mg/generate schema opts))
+  "Generate a random aggregate. Useful for mockups and tests."
+  [system & {:as opts}]
+  (mg/generate (:schema system) opts))
+
+(defn gen-event
+  "Generate a random event. Useful for mockups and tests."
+  [system event-name & {:as opts}]
+  (mg/generate (-> system :events event-name) opts))

@@ -3,14 +3,33 @@
             [xtdb.api :as xt])
   (:import (java.time Duration)))
 
+;; todo set in system, not in a global var
 (defonce node (atom nil))
 
-#_(xt/listen @node {::xt/event-type ::xt/indexed-tx} prn)
 
-(defn insert-async
-  "Insert of the event context. Returns a deferrable aggregate version."
-  [event-ctx]
-  (xt/submit-tx-async @node [[::xt/fn (-> event-ctx :event :type) event-ctx]]))
+(defn- extract-events [xt-event]
+  (loop [acc []
+         ops (:xtdb.api/tx-ops xt-event)]
+    (if-let [[op-type doc op-param] (first ops)]
+      (case op-type
+        :xtdb.api/put
+        (if (= :muguet.api/event (:muguet.api/document-type doc))
+          (recur (conj acc doc) (rest ops))
+          (recur acc (rest ops)))
+        :xtdb.api/fn
+        (recur acc (into (rest ops) (:xtdb.api/tx-ops op-param))))
+      acc)))
+
+
+
+(defn listen-events [on-event]
+  (xt/listen @node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
+             (fn
+               ;; xt-event is not a muguet event, it's an event inside xtdb
+               [xt-event]
+               (when (:committed? xt-event)
+                 (doseq [event (extract-events xt-event)]
+                   (on-event event))))))
 
 (def event-ctx
   [:map
@@ -27,9 +46,8 @@
      [:id {:doc "The domain id (not the technical one), must be serializable as string because it is derived to construct the technical id"} any?]
      [:version {:doc "An aggregate has a - string serialized - version that changes each time an event is applied on it. Versions have a relation of order but must be opaque for client. They can be used as HTTP ETag"} :string]]]])
 
-;; todo make an async version
-(defn register-event-handler
-  [event-type f]
+(defn register-tx-fn
+  [id f]
   ;; todo check f is a LIST (source code fn) with proper arguments
   ;;      see how we can get the source code if it's a fn ?
   ;;      maybe we can just wrap f in a list because it feels weird they have to do some xtdb shit in upper layer...
@@ -38,13 +56,18 @@
   ;  (let [db (xtdb.api/db ctx)
   ;        entity (xtdb.api/entity db eid)]
   ;    [[::xt/put (update entity :age inc)]]))
-  (xt/await-tx @node (xt/submit-tx @node [[::xt/put {:xt/id event-type
+  (xt/await-tx @node (xt/submit-tx @node [[::xt/put {:xt/id id
                                                      :xt/fn f}]])
                (Duration/ofSeconds 1)))
+
+(defn register-event-handler
+  [event-type f]
+  (register-tx-fn event-type f))
 
 (defn id->xt-aggregate-id [id] (str id "_aggregate"))
 (defn id->xt-last-event-id [id] (str id "_last_event"))
 (defn id->xt-error-id [id] (str id "_error"))
+(defn id->xt-aggregation-id [aggregation-name id] (str id "_" (name aggregation-name)))
 
 ;; todo all this functions should support pagination and ordering
 
@@ -63,6 +86,10 @@
   [db id]
   (clean-doc (xt/entity db (id->xt-aggregate-id id))))
 
+(defn fetch-aggregation
+  [db aggregation-name id]
+  (clean-doc (xt/entity db (id->xt-aggregation-id aggregation-name id))))
+
 (defn fetch-event-history
   "Retrieve the all the events that have been applied on the aggregate"
   ;; todo we probably want to retrieve slices of event history to rebuild
@@ -71,9 +98,12 @@
   (map (fn [{:keys [:xtdb.api/doc]}] (clean-doc doc))
        (xt/entity-history db (id->xt-last-event-id id) :asc {:with-docs? true})))
 
-;; todo remove id parameter, stream-version should be sufficient
 (defn fetch-last-event-version
-  "Fetch last event holding the version"
+  "Fetch last event holding the version.
+  A document exists in 2 dimensions: its identity `id` and in time with `stream-version`.
+  The sole stream-version is not enough because there can be several document inserted with the same stream-version
+  (in case of multiple events emitted in a command)"
+  ;; todo from comment above, maybe instroduce a document "coordinates" that contains version and id ?
   [stream-version id]
   (clean-doc (ffirst (xt/q (xt/db @node)
                            '{:find [(pull ?last-event [*])]
@@ -82,7 +112,6 @@
                                      [?last-event :stream-version version]]}
                            (id->xt-last-event-id id) stream-version))))
 
-;; todo remove id parameter, stream-version should be sufficient
 (defn fetch-aggregate-version
   [stream-version id]
   (clean-doc (ffirst (xt/q (xt/db @node)
@@ -92,7 +121,6 @@
                                      [?aggregate :stream-version version]]}
                            [(id->xt-aggregate-id id) stream-version]))))
 
-;; todo remove id parameter, stream-version should be sufficient because it's unique for the whole database
 (defn fetch-error-version
   [stream-version id]
   (with-open [cursor (xt/open-entity-history (xt/db @node) (id->xt-error-id id) :asc
@@ -114,3 +142,15 @@
             :where [[aggregate ::muga/aggregate-name aggregate-name]
                     [aggregate ::muga/document-type ::muga/aggregate]]}
           aggregate-name)))
+
+;; fixme in multi aggregate system there will be id conflicts
+(defn fetch-aggregation-version [aggregation-name id version]
+  (clean-doc
+    (ffirst
+      (xt/q (xt/db @node)
+            '{:find [(pull ?aggregation [*])]
+              :in [xt-id version]
+              :where [[?aggregation :xt/id xt-id]
+                      [?aggregation :stream-version version]]}
+            (id->xt-aggregation-id aggregation-name id)
+            version))))
