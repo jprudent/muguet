@@ -154,3 +154,10 @@
                       [?aggregation :stream-version version]]}
             (id->xt-aggregation-id aggregation-name id)
             version))))
+
+(defn fetch-last-event [db aggregate-id]
+  (clean-doc (ffirst (xt/q (xt/db @node)
+                           '{:find [(pull ?last-event [*])]
+                             :in [xt-id]
+                             :where [[?last-event :xt/id xt-id]]}
+                           (id->xt-last-event-id aggregate-id)))))

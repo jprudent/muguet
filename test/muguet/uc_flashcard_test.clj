@@ -62,7 +62,7 @@
 
 (def pos-int [:int {:min 1}])
 
-;; todo all aggregations must be CamelCase
+;; todo all schemas must be CamelCase
 (def MeanAggregation
   [:map
    [:number {:doc "The number of time the flashcard have been rated"} pos-int]

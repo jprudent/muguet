@@ -85,8 +85,16 @@
   [db-ctx event-ctx aggregations]
   (let [{:keys [event aggregate-name aggregate-id stream-version]} event-ctx
         db (xt/db db-ctx)
-        existing-aggregate (muguet.internals.db/fetch-aggregate db aggregate-id)]
-    (if (= stream-version (:stream-version existing-aggregate))
+        existing-aggregate (muguet.internals.db/fetch-aggregate db aggregate-id)
+        last-event (db/fetch-last-event db aggregate-id)]
+
+    ;; there are 3 tx references in this function:
+    ;; - the :stream-version of event-ctx is the expected version to be found in
+    ;;   the database (Optimistic Concurrency)
+    ;; - the :stream-version of the last-event is the actual version of the db
+    ;; - the :indexing-tx of db-ctx is the new version that will result of this function
+
+    (if (= stream-version (:stream-version last-event))
       (let [event (assoc event
                     :xt/id (muguet.internals.db/id->xt-last-event-id aggregate-id)
                     ::muga/aggregate-name aggregate-name
