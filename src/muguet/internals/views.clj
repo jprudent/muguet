@@ -1,6 +1,5 @@
 (ns muguet.internals.views
-  (:require [muguet.internals.db :as db]
-            [xtdb.api :as xt]))
+  (:require [muguet.internals.db :as db]))
 
 
 ;; there are 3 kinds of views
@@ -14,21 +13,8 @@
 ;;   - the result is computed once, cached, and updated when an event arrives
 
 ;; todo pagination and sorting
-(defn all
+(defn all-aggregations
   "a query based mono-type-aggregate-view that returns all aggregates of given type"
-  [version aggregate-system]
-  (db/all version (:aggregate-name aggregate-system)))
-
-;; todo should provide a stream-version so init-value could be a snapshot, without need to process all events
-#_(defn register-event-based-mono-type-aggregate-view
-  [view-name aggregate-system reduction-fn init-value]
-  (let [view (reduce reduction-fn init-value (db/fetch-events (:aggregate-name aggregate-system)))]
-    (db/save-view view-name view)
-    ;; todo shouldn't have a ref of node here
-    ;; todo should close the
-    (xt/listen @db/node {::xt/event-type ::xt/indexed-tx
-                         :with-tx-ops? true}
-               (fn []
-                 ;; todo apply event on current view version
-                 ))))
+  [aggregate-system aggregation-name]
+  (db/all-aggregations (:aggregate-name aggregate-system) aggregation-name))
 

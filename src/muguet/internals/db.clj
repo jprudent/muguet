@@ -75,7 +75,8 @@
   "Remove purely technical attribute to have a clean API"
   [doc]
   ;; :stream-version is part of the API
-  (dissoc doc :xt/id ::muga/aggregate-name ::muga/document-type))
+  (when doc
+    (dissoc doc :xt/id ::muga/aggregate-name ::muga/document-type)))
 
 (defn fetch-aggregate
   ; The DB must be provided because it's the context it provides a context
@@ -131,17 +132,17 @@
       (clean-doc (some (fn [{:keys [:xtdb.api/doc]}]
                          (when (= stream-version (:stream-version doc)) doc))
                        history)))))
-;; todo remove id parameter, stream-version should be sufficient
-(defn all
-  [stream-version aggregate-name]
+
+(defn all-aggregations
+  [aggregate-name aggregation-name]
   (map
     (comp clean-doc first)
     (xt/q (xt/db @node)
           '{:find [(pull aggregate [*])]
-            :in [aggregate-name]
+            :in [aggregate-name aggregation-name]
             :where [[aggregate ::muga/aggregate-name aggregate-name]
-                    [aggregate ::muga/document-type ::muga/aggregate]]}
-          aggregate-name)))
+                    [aggregate ::muga/document-type aggregation-name]]}
+          aggregate-name aggregation-name)))
 
 ;; fixme in multi aggregate system there will be id conflicts
 (defn fetch-aggregation-version [aggregation-name id version]

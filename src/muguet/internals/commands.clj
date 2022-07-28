@@ -103,7 +103,7 @@
         (into
           [[::xt/put event]
            ;; todo on-aggregate could be computed in the function
-           [::xt/fn (-> event :type) (assoc event-ctx :on-aggregate existing-aggregate)]]
+           #_[::xt/fn (-> event :type) (assoc event-ctx :on-aggregate existing-aggregate)]]
           (vec (map (fn [aggr-name] [:xtdb.api/fn aggr-name event]) (keys aggregations)))))
       (let [error-doc {:xt/id (muguet.internals.db/id->xt-error-id aggregate-id)
                        :stream-version (:indexing-tx db-ctx)
@@ -146,6 +146,7 @@
         command-fn (fn [id stream-version command-params]
                      (int/execute
                        {:aggregate-system aggregate-system
+                        :aggregate-name (:aggregate-name aggregate-system)
                         :aggregate-id id
                         :stream-version stream-version
                         :command-params command-params}
@@ -196,15 +197,16 @@
 ;; event, so they are indexed in that order
 (defn call-event-handler
   [aggregation db-ctx event]
-  (let [{:keys [aggregate-id]} event
+  (let [{:keys [aggregate-id ::muga/aggregate-name]} event
         [aggr-name aggr-desc] aggregation
         {:keys [event-handler]} aggr-desc
         db (xt/db db-ctx)
         existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
     ;; todo check schema of the aggregation here
-    (prn "===" event (:stream-version event))
     [[::xt/put (assoc (event-handler existing-aggregation event)
                  :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
+                 ::muga/document-type aggr-name
+                 ::muga/aggregate-name aggregate-name
                  :stream-version (:stream-version event))]]))
 
 (defn register-aggregations!

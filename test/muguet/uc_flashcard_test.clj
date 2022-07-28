@@ -3,6 +3,7 @@
   (:require [clojure.test :refer :all]
     ;; todo should only import public apis
             [clojure.tools.logging :as log]
+            [malli.core :as m]
             [malli.util :as mu]
             [muguet.api :as muga]
             [muguet.core :as mug]
@@ -41,6 +42,8 @@
 (def flashcard-init-schema
   (mu/optional-keys flashcard-schema [:due-date]))
 
+;; todo could rewrite all aggregation function as a big multimethod on :aggregation-name + event :type
+
 (letfn [(now [] (LocalDateTime/now))
         (add-days [^LocalDateTime date days] (.plusDays date days))]
 
@@ -53,9 +56,15 @@
     [flashcard rated-event]
     (import java.time.LocalDateTime)
     (let [due-date (add-days (now) (:body rated-event))]
-      (assoc flashcard :due-date due-date))))
+      (assoc flashcard :due-date due-date)))
 
-(def rating-schema
+  (defn aggregate-aggregation
+    [flashcard event]
+    (case (:type event)
+      :flashcard/created (apply-created-event flashcard event)
+      :flashcard/rated (apply-rated-event flashcard event))))
+
+(def Rating
   [:int {:error/message "The rating should be an integer between 0 and 5"
          :min 0
          :max 5}])
@@ -88,11 +97,12 @@
    ;; todo event-handlers are aggregations, and must be treated as such, not mixed in event definitions
    :events {:flashcard/created {:body-schema flashcard-init-schema
                                 :event-handler `apply-created-event}
-            :flashcard/rated {:body-schema rating-schema
+            :flashcard/rated {:body-schema Rating
                               :event-handler `apply-rated-event}}
+   ;; a command is an action on the system with an intention to change it
    :commands {:flashcard/create {:args-schema (mu/optional-keys flashcard-schema [:due-date])
                                  :steps [(mug/build-event :flashcard/created :command-params)]}
-              :flashcard/rate {:args-schema rating-schema
+              :flashcard/rate {:args-schema Rating
                                :steps [(mug/build-event :flashcard/rated :command-params)]}}
 
    ;; An aggregation is a read model dedicated to a particular view of the application
@@ -101,9 +111,10 @@
    ;; doesn't need any computation, similar in that aspect of a cache entry.
    ;; Aggregations are versioned in the database like event stream and aggregate.
 
-   ;; Aggregations update can be transactional or asynchronous
+   ;; Aggregations are transactional by default or asynchronous
    ;; - Transactional is the default. The aggregation gets updated at the same time
-   ;;   than the event is issued. Transactional aggregations are always up to date.
+   ;;   as the event is issued. Transactional aggregations are always up-to-date.
+   ;;   Commands would typically use transactional aggregations to check validity.
    ;;   pros: synchronicity is simpler
    ;;   cons: transactions take more time
    ;; - Asynchronous. The aggregation gets updated some time later, uncoupled
@@ -112,10 +123,17 @@
    ;; Here `-transactional` and `-async` suffixes are appended to the
    ;; aggregation name to make things clearer in my test case. There is no
    ;; conventions whatsoever.
-   :aggregations-per-aggregate-id {:flashcard/mean-transactional {:event-handler `mean-aggregation
+   :aggregations-per-aggregate-id {:flashcard/aggregate {:doc "Reference aggregate for a flashcard.
+   This is the kind of document you would store in a conventional database.
+   Can be fetched in commands to check the validity of the command."
+                                                         :event-handler `aggregate-aggregation
+                                                         :schema (m/form (mu/optional-keys flashcard-schema [:due-date]))}
+                                   :flashcard/mean-transactional {:doc "A transactional aggregate that represents the mean rating of a flashcard"
+                                                                  :event-handler `mean-aggregation
                                                                   ;; todo test that the schema is checked
                                                                   :schema MeanAggregation}
-                                   :flashcard/mean-async {:event-handler `mean-aggregation
+                                   :flashcard/mean-async {:doc "An async aggregate that represents the mean rating of a flashcard"
+                                                          :event-handler `mean-aggregation
                                                           :schema MeanAggregation
                                                           :async true}}})
 
@@ -221,15 +239,14 @@
     (is (= v2 (get-in result [:error :details :actual])))
     (is (= v1 (get-in result [:error :details :expected])))))
 
-
 (deftest view-all-test
   (let [create (sut/get-command @flashcard-system :flashcard/create)
         init-values (map (fn [id] {:question "q?" :response "r" :id id}) (range 10))
-        results (map (fn [init-value]
-                       (let [version (create (:id init-value) nil init-value)]
-                         (tu/blocking-fetch-command-result version (:id init-value))))
-                     init-values)
-        all (views/all (last results) @flashcard-system)]
+        _ (mapv (fn [init-value]
+                  (let [version (create (:id init-value) nil init-value)]
+                    (tu/blocking-fetch-command-result version (:id init-value))))
+                init-values)
+        all (views/all-aggregations @flashcard-system :flashcard/aggregate)]
     (is (= init-values (sort-by :id (map #(dissoc % :stream-version) all))))))
 
 (deftest mean-aggregation-transactional-test
