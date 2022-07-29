@@ -89,6 +89,9 @@
     :flashcard/rated
     (mean aggregation (:body event))))
 
+(defn broken-aggregation
+  [aggregation event])
+
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
@@ -132,7 +135,10 @@
                                    :flashcard/mean-async {:doc "An async aggregate that represents the mean rating of a flashcard"
                                                           :event-handler `mean-aggregation
                                                           :schema MeanAggregation
-                                                          :async true}}})
+                                                          :async true}
+                                   :flashcard/broken-transactional {:doc "A transactional aggregation that can throw exceptions"
+                                                                    :event-handler `broken-aggregation
+                                                                    :schema nil}}})
 
 (def flashcard-system (atom nil))
 
