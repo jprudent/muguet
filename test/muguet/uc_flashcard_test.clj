@@ -110,6 +110,8 @@
    ;; - Transactional is the default. The aggregation gets updated at the same time
    ;;   as the event is issued. Transactional aggregations are always up-to-date.
    ;;   Commands would typically use transactional aggregations to check validity.
+   ;;   When a transactional aggregation throws an error, the whole transaction is
+   ;;   canceled, including the events that triggered it.
    ;;   pros: synchronicity is simpler
    ;;   cons: transactions take more time
    ;; - Asynchronous. The aggregation gets updated some time later, uncoupled
