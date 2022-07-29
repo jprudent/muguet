@@ -89,8 +89,13 @@
     :flashcard/rated
     (mean aggregation (:body event))))
 
+(def broken? (atom false))
+
 (defn broken-aggregation
-  [aggregation event])
+  [aggregation event]
+  (when @broken?
+    (throw (ex-info "Broken aggregation" {:aggregation aggregation
+                                          :event event}))))
 
 (def flashcard-system-config
   {:schema flashcard-schema
@@ -123,6 +128,8 @@
    ;; Here `-transactional` and `-async` suffixes are appended to the
    ;; aggregation name to make things clearer in my test case. There is no
    ;; conventions whatsoever.
+
+   ;; TODO rename flashcard/aggregate because there is some convention around this name
    :aggregations-per-aggregate-id {:flashcard/aggregate {:doc "Reference aggregate for a flashcard.
    This is the kind of document you would store in a conventional database.
    Can be fetched in commands to check the validity of the command."
@@ -287,4 +294,18 @@
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
                  (sut/fetch-aggregation :flashcard/mean-async 1 v3)))]))
 
-;; todo multisystem tests
+
+(deftest broken-transactional-rollback-test
+  (testing "A broken aggregation rollbacks the whole transaction"
+    (try
+      (reset! broken? true)
+      (let [v1 (mug/command @flashcard-system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+            result (tu/blocking-fetch-command-result v1 1)]
+        ;; fixme must be an error
+
+        (is (= #:muguet.api{:command-status :muguet.api/pending} result)))
+      (finally (reset! broken? false)))))
+
+;; todo multisystem tests`
+
+;; todo a command that decides multiple events
