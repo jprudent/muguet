@@ -50,7 +50,7 @@
   (defn aggregate-aggregation
     [flashcard event]
     (case (:type event)
-       
+
       :flashcard/created
       (:body event)
 
@@ -64,13 +64,13 @@
          :min 0
          :max 5}])
 
-(def pos-int [:int {:min 1}])
+(def PosInt [:int {:min 1}])
 
 ;; todo all schemas must be CamelCase
 (def MeanAggregation
   [:map
-   [:number {:doc "The number of time the flashcard have been rated"} pos-int]
-   [:sum {:doc "The sum of all ratings"} pos-int]
+   [:number {:doc "The number of time the flashcard have been rated"} PosInt]
+   [:sum {:doc "The sum of all ratings"} PosInt]
    [:mean {:doc "The result of the computation sum/number"} [:double {:min 0}]]])
 
 (defn mean
@@ -81,19 +81,19 @@
 
 (defn mean-aggregation
   [aggregation event]
-  (let [aggregation (or aggregation {:number 0 :sum 0})]
-    (if (= (:type event) :flashcard/rated)
-      (mean aggregation (:body event))
-      aggregation)))
+  (case (:type event)
+
+    :flashcard/created
+    {:number 0 :sum 0}
+
+    :flashcard/rated
+    (mean aggregation (:body event))))
 
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
-   ;; todo event-handlers are aggregations, and must be treated as such, not mixed in event definitions
-   :events {:flashcard/created {:body-schema flashcard-init-schema
-                                :event-handler `apply-created-event}
-            :flashcard/rated {:body-schema Rating
-                              :event-handler `apply-rated-event}}
+   :events {:flashcard/created {:body-schema flashcard-init-schema}
+            :flashcard/rated {:body-schema Rating}}
    ;; a command is an action on the system with an intention to change it
    :commands {:flashcard/create {:args-schema (mu/optional-keys flashcard-schema [:due-date])
                                  :steps [(mug/build-event :flashcard/created :command-params)]}
