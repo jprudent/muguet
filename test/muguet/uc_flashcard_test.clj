@@ -47,22 +47,17 @@
 (letfn [(now [] (LocalDateTime/now))
         (add-days [^LocalDateTime date days] (.plusDays date days))]
 
-  (defn apply-created-event
-    [flashcard created-event]
-    {:pre [(not flashcard)]}
-    (:body created-event))
-
-  (defn apply-rated-event
-    [flashcard rated-event]
-    (import java.time.LocalDateTime)
-    (let [due-date (add-days (now) (:body rated-event))]
-      (assoc flashcard :due-date due-date)))
-
   (defn aggregate-aggregation
     [flashcard event]
     (case (:type event)
-      :flashcard/created (apply-created-event flashcard event)
-      :flashcard/rated (apply-rated-event flashcard event))))
+       
+      :flashcard/created
+      (:body event)
+
+      :flashcard/rated
+      (do (import java.time.LocalDateTime)
+          (let [due-date (add-days (now) (:body event))]
+            (assoc flashcard :due-date due-date))))))
 
 (def Rating
   [:int {:error/message "The rating should be an integer between 0 and 5"
