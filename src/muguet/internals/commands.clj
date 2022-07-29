@@ -85,7 +85,6 @@
   [db-ctx event-ctx aggregations]
   (let [{:keys [event aggregate-name aggregate-id stream-version]} event-ctx
         db (xt/db db-ctx)
-        existing-aggregate (muguet.internals.db/fetch-aggregate db aggregate-id)
         last-event (db/fetch-last-event db aggregate-id)]
 
     ;; there are 3 tx references in this function:
@@ -112,7 +111,7 @@
                        ::muga/aggregate-name aggregate-name
                        ::muga/document-type ::muga/error
                        :message "the specified aggregate version couldn't be find"
-                       :details {:actual (:stream-version existing-aggregate)
+                       :details {:actual (:stream-version last-event)
                                  :expected stream-version}}]
         (clojure.tools.logging/error error-doc)
         [[::xt/put error-doc]]))))
