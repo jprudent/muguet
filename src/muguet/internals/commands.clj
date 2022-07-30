@@ -22,6 +22,11 @@
 ;; fire family, such command will emit as many events as there is fire
 ;; pokemon cards.
 
+(defn before?
+  "Compares 2 transactions"
+  [tx1 tx2]
+  (<= (::xt/tx-id tx1) (::xt/tx-id tx2)))
+
 ;; todo move this in public api
 ;; todo why is there an aggregate id mandatory ?
 ;; todo have a single argument named `command-result`
@@ -45,7 +50,10 @@
         (if-let [error (db/fetch-error-version stream-version id)]
           {:error error
            ::muga/command-status ::muga/complete}
-          {::muga/command-status ::muga/pending})))))
+          (if (before? stream-version (xt/latest-completed-tx @db/node))
+            {:error "The command failed in an unexpected manner. Check the logs for details."
+             ::muga/command-status ::muga/complete}
+            {::muga/command-status ::muga/pending}))))))
 
 (defn- make-event-builder
   [{:keys [type body-schema]}]
@@ -100,9 +108,7 @@
                     ::muga/document-type ::muga/event
                     :stream-version (:indexing-tx db-ctx))]
         (into
-          [[::xt/put event]
-           ;; todo on-aggregate could be computed in the function
-           #_[::xt/fn (-> event :type) (assoc event-ctx :on-aggregate existing-aggregate)]]
+          [[::xt/put event]]
           (vec (map (fn [aggr-name] [:xtdb.api/fn aggr-name event]) (keys aggregations)))))
       (let [error-doc {:xt/id (muguet.internals.db/id->xt-error-id aggregate-id)
                        :stream-version (:indexing-tx db-ctx)

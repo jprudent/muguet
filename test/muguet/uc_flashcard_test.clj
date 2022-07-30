@@ -286,11 +286,11 @@
         v2 (rate 1 v1 5)
         ;; The aggregation update gets delayed, so we wait a bit ...
         ;; todo don't use Thread/sleep
-        _ (Thread/sleep 100)
+        _ (Thread/sleep 200)
         _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
                  (sut/fetch-aggregation :flashcard/mean-async 1 v2)))
         v3 (rate 1 v2 0)
-        _ (Thread/sleep 100)
+        _ (Thread/sleep 200)
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
                  (sut/fetch-aggregation :flashcard/mean-async 1 v3)))]))
 
@@ -301,9 +301,8 @@
       (reset! broken? true)
       (let [v1 (mug/command @flashcard-system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
             result (tu/blocking-fetch-command-result v1 1)]
-        ;; fixme must be an error
-
-        (is (= #:muguet.api{:command-status :muguet.api/pending} result)))
+        (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
+                ::muga/command-status ::muga/complete} result)))
       (finally (reset! broken? false)))))
 
 ;; todo multisystem tests`
