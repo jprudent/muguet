@@ -65,7 +65,7 @@
   [event]
   (assoc event :builder (make-event-builder event)))
 
-(defn register-event-handlers!
+(defn register-evolve-functions!
   [{:keys [aggregate-name events] :as system}]
   (doseq [{:keys [event-handler type]} (vals events)]
     (db/register-tx-fn
@@ -200,15 +200,15 @@
 
 ;; we don't need to check stream-version because events are called event after
 ;; event, so they are indexed in that order
-(defn call-event-handler
+(defn call-evolve
   [aggregation db-ctx event]
   (let [{:keys [aggregate-id ::muga/aggregate-name]} event
         [aggr-name aggr-desc] aggregation
-        {:keys [event-handler]} aggr-desc
+        {:keys [evolve]} aggr-desc
         db (xt/db db-ctx)
         existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
     ;; todo check schema of the aggregation here
-    [[::xt/put (assoc (event-handler existing-aggregation event)
+    [[::xt/put (assoc (evolve existing-aggregation event)
                  :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
                  ::muga/document-type aggr-name
                  ::muga/aggregate-name aggregate-name
@@ -223,7 +223,7 @@
       ;; this function put new version of the aggregation
       (db/register-tx-fn
         (first aggregation)
-        `(fn ~'[db-ctx event] (muguet.internals.commands/call-event-handler ~aggregation ~'db-ctx ~'event))))
+        `(fn ~'[db-ctx event] (muguet.internals.commands/call-evolve ~aggregation ~'db-ctx ~'event))))
 
     ;; register the function that updates all async aggregations
     ;; it calls all functions that update async aggregations

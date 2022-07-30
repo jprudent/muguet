@@ -60,10 +60,6 @@
                                                      :xt/fn f}]])
                (Duration/ofSeconds 1)))
 
-(defn register-event-handler
-  [event-type f]
-  (register-tx-fn event-type f))
-
 (defn id->xt-aggregate-id [id] (str id "_aggregate"))
 (defn id->xt-last-event-id [id] (str id "_last_event"))
 (defn id->xt-error-id [id] (str id "_error"))

@@ -47,7 +47,7 @@
 (letfn [(now [] (LocalDateTime/now))
         (add-days [^LocalDateTime date days] (.plusDays date days))]
 
-  (defn aggregate-aggregation
+  (defn evolve-aggregate
     [flashcard event]
     (case (:type event)
 
@@ -79,7 +79,7 @@
                         (update :sum + rating))]
     (assoc aggregation :mean (double (/ (:sum aggregation) (:number aggregation))))))
 
-(defn mean-aggregation
+(defn evolve-mean
   [aggregation event]
   (case (:type event)
 
@@ -91,7 +91,7 @@
 
 (def broken? (atom false))
 
-(defn broken-aggregation
+(defn evolve-broken
   [aggregation event]
   (when @broken?
     (throw (ex-info "Broken aggregation" {:aggregation aggregation
@@ -133,18 +133,18 @@
    :aggregations-per-aggregate-id {:flashcard/aggregate {:doc "Reference aggregate for a flashcard.
    This is the kind of document you would store in a conventional database.
    Can be fetched in commands to check the validity of the command."
-                                                         :event-handler `aggregate-aggregation
+                                                         :evolve `evolve-aggregate
                                                          :schema (m/form (mu/optional-keys flashcard-schema [:due-date]))}
                                    :flashcard/mean-transactional {:doc "A transactional aggregate that represents the mean rating of a flashcard"
-                                                                  :event-handler `mean-aggregation
+                                                                  :evolve `evolve-mean
                                                                   ;; todo test that the schema is checked
                                                                   :schema MeanAggregation}
                                    :flashcard/mean-async {:doc "An async aggregate that represents the mean rating of a flashcard"
-                                                          :event-handler `mean-aggregation
+                                                          :evolve `evolve-mean
                                                           :schema MeanAggregation
                                                           :async true}
                                    :flashcard/broken-transactional {:doc "A transactional aggregation that can throw exceptions"
-                                                                    :event-handler `broken-aggregation
+                                                                    :evolve `evolve-broken
                                                                     :schema nil}}})
 
 (def flashcard-system (atom nil))

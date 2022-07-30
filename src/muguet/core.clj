@@ -16,7 +16,7 @@
     (if (meta/validate schema)
       (-> (mug-cmd/assoc-event-builders system)
           (mug-cmd/register-aggregations!)
-          (mug-cmd/register-event-handlers!)
+          (mug-cmd/register-evolve-functions!)
           (mug-cmd/register-commands!))
       (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {}))))))
 
