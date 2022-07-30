@@ -31,21 +31,6 @@
                  (doseq [event (extract-events xt-event)]
                    (on-event event))))))
 
-(def event-ctx
-  [:map
-   [:event {:doc "the event to apply"} :map]
-   ;; todo "on-aggregate" is a confusing name that recall some kink of callback
-   [:on-aggregate {:doc "The aggregate the event is applied upon.
-    This is how Optimistic Concurrency Control is implemented.
-    on-aggregate can be provided by the end user if he wants to solve concurrency issues itself.
-    on-aggregate can be retrieved automatically and the action could be retried on up to date aggregate"}
-    ;; TODO instead of the whole aggregate, we could provide the aggregate version
-    :map]
-   [:aggregate {:doc "the resulting aggregate after applying the event"}
-    [:map
-     [:id {:doc "The domain id (not the technical one), must be serializable as string because it is derived to construct the technical id"} any?]
-     [:version {:doc "An aggregate has a - string serialized - version that changes each time an event is applied on it. Versions have a relation of order but must be opaque for client. They can be used as HTTP ETag"} :string]]]])
-
 (defn register-tx-fn
   [id f]
   ;; todo check f is a LIST (source code fn) with proper arguments
@@ -108,15 +93,6 @@
                              :where [[?last-event :xt/id xt-id]
                                      [?last-event :stream-version version]]}
                            (id->xt-last-event-id id) stream-version))))
-
-(defn fetch-aggregate-version
-  [stream-version id]
-  (clean-doc (ffirst (xt/q (xt/db @node)
-                           '{:find [(pull ?aggregate [*])]
-                             :in [[xt-id version]]
-                             :where [[?aggregate :xt/id xt-id]
-                                     [?aggregate :stream-version version]]}
-                           [(id->xt-aggregate-id id) stream-version]))))
 
 (defn fetch-error-version
   [stream-version id]

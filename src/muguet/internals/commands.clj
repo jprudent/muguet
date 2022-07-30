@@ -41,11 +41,9 @@
     stream-version
     (let [;; fixme there will be a bug if some other command at stream-version+1 happened (won't find the element i think)
           ;; fixme retrieving 2 documents smells like teen spirit (https://github.com/jprudent/muguet/issues/1)
-          event (db/fetch-last-event-version stream-version id)
-          aggregate (db/fetch-aggregate-version stream-version id)]
-      (if (and event aggregate)
+          event (db/fetch-last-event-version stream-version id)]
+      (if event
         {:event event
-         :aggregate aggregate
          ::muga/command-status ::muga/complete}
         (if-let [error (db/fetch-error-version stream-version id)]
           {:error error

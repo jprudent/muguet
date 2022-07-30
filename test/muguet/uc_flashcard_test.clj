@@ -129,7 +129,6 @@
    ;; aggregation name to make things clearer in my test case. There is no
    ;; conventions whatsoever.
 
-   ;; TODO rename flashcard/aggregate because there is some convention around this name
    :aggregations-per-aggregate-id {:flashcard/aggregate {:doc "Reference aggregate for a flashcard.
    This is the kind of document you would store in a conventional database.
    Can be fetched in commands to check the validity of the command."
@@ -163,8 +162,9 @@
   (let [id 1
         create-cmd (sut/get-command @flashcard-system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
-        stream-version (create-cmd id nil flashcard-init)
-        {:keys [aggregate event ::muga/command-status]} (tu/blocking-fetch-command-result stream-version id)
+        v1 (create-cmd id nil flashcard-init)
+        {:keys [event ::muga/command-status]} (tu/blocking-fetch-command-result v1 id)
+        aggregate (sut/fetch-aggregation :flashcard/aggregate 1 v1)
         expected-event {:type :flashcard/created
                         :aggregate-id id
                         :body flashcard-init}]
@@ -176,8 +176,7 @@
 
     ;; -- the aggregate and event can be retrieved separately from a command result
     (is (= [event] (db/fetch-event-history (xt/db @db/node) id)))
-    (is (= event (db/fetch-last-event-version (:stream-version event) id)))
-    (is (= aggregate (db/fetch-aggregate-version (:stream-version event) id)))))
+    (is (= event (db/fetch-last-event-version (:stream-version event) id)))))
 
 (deftest already-exists-test
   (let [create-cmd (sut/get-command @flashcard-system :flashcard/create)
@@ -221,15 +220,16 @@
   (let [id 1
         create-cmd (sut/get-command @flashcard-system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
-        version (create-cmd id nil flashcard-init)
-        create-result (tu/blocking-fetch-command-result version id)
+        v1 (create-cmd id nil flashcard-init)
+        create-result (tu/blocking-fetch-command-result v1 id)
         created-event (:event create-result)
         _ (is (= :muguet.api/complete (:muguet.api/command-status create-result)))
 
         rate-cmd (sut/get-command @flashcard-system :flashcard/rate)
         rating 4
-        cmd-result (rate-cmd id version rating)
-        {fc-rated :aggregate rated-event :event} (tu/blocking-fetch-command-result cmd-result id)]
+        v2 (rate-cmd id v1 rating)
+        {rated-event :event} (tu/blocking-fetch-command-result v2 id)
+        fc-rated (sut/fetch-aggregation :flashcard/aggregate id v2)]
     (is (= {:type :flashcard/rated
             :aggregate-id id
             :body rating}
