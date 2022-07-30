@@ -65,20 +65,6 @@
   [event]
   (assoc event :builder (make-event-builder event)))
 
-(defn register-evolve-functions!
-  [{:keys [aggregate-name events] :as system}]
-  (doseq [{:keys [event-handler type]} (vals events)]
-    (db/register-tx-fn
-      type
-      `(fn ~'[db-ctx event-ctx]
-         (let ~'[{:keys [event on-aggregate aggregate-id]} event-ctx]
-           [[::xt/put (assoc (~event-handler ~'on-aggregate ~'event)
-                        :xt/id (muguet.internals.db/id->xt-aggregate-id ~'aggregate-id)
-                        ::muga/aggregate-name ~aggregate-name
-                        ::muga/document-type ::muga/aggregate
-                        :stream-version (:indexing-tx ~'db-ctx))]]))))
-  system)
-
 (defn submit-event
   [f]
   {:name "submit-event"
