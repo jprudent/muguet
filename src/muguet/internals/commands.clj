@@ -201,8 +201,8 @@
 (defn register-aggregations!
   [system]
   (when-let [aggregations (not-empty (get system :aggregations-per-aggregate-id))]
-    ;; register all functions that update aggregations
-    ;; there is one such function per aggregation, be it async or not
+    ;; register all functions that evolve aggregations
+    ;; there is only one such function per aggregation, be it async or not
     (doseq [aggregation aggregations]
       ;; this function put new version of the aggregation
       (db/register-tx-fn
