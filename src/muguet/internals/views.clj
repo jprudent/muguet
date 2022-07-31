@@ -15,6 +15,6 @@
 ;; todo pagination and sorting
 (defn all-aggregations
   "a query based mono-type-aggregate-view that returns all aggregates of given type"
-  [aggregate-system aggregation-name]
-  (db/all-aggregations (:aggregate-name aggregate-system) aggregation-name))
+  [system aggregation-name]
+  (db/all-aggregations system (:aggregate-name system) aggregation-name))
 

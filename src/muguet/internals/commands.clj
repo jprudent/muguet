@@ -33,22 +33,28 @@
 (defn fetch-command-result
   "Given a stream-version returned by a command (all commands ares asynchronous)
   and an aggregate-id, returns the status, event, aggregate or error "
-  [stream-version id]
+  [system stream-version id]
   ;; it can happen that the command fails outside the context of a database
   ;; transaction
   ;; todo can that happen for a command success ?
+  ;;      no, complete only happens when the command fails
+  ;;      I must change the api of return value of a command because it either returns { ...complete } if failure
+  ;;      or { xt/tx-id, xt/tx-time } in case of success. Must be more monadic.
   (if (= ::muga/complete (::muga/command-status stream-version))
     stream-version
     (let [;; fixme there will be a bug if some other command at stream-version+1 happened (won't find the element i think)
           ;; fixme retrieving 2 documents smells like teen spirit (https://github.com/jprudent/muguet/issues/1)
-          event (db/fetch-last-event-version stream-version id)]
+          event (db/fetch-last-event-version system stream-version id)]
       (if event
         {:event event
          ::muga/command-status ::muga/complete}
-        (if-let [error (db/fetch-error-version stream-version id)]
+        (if-let [error (db/fetch-error-version system stream-version id)]
           {:error error
            ::muga/command-status ::muga/complete}
-          (if (before? stream-version (xt/latest-completed-tx @db/node))
+          (if (before? stream-version (xt/latest-completed-tx (:node system)))
+            ;; in that case, the command failed because the version have been indexed but the
+            ;; documents can not be found. I may happen when the evolve function of aggregation
+            ;; failed.
             {:error "The command failed in an unexpected manner. Check the logs for details."
              ::muga/command-status ::muga/complete}
             {::muga/command-status ::muga/pending}))))))
@@ -64,20 +70,19 @@
   (assoc event :builder (make-event-builder event)))
 
 (defn submit-event
-  [f]
+  [system f]
   {:name "submit-event"
    :enter (fn [context]
             (when (not (:event context)) (throw (ex-info "Can't submit event. Missing event in context." context)))
-            (xt/submit-tx @db/node [[::xt/fn f (select-keys context [:event
-                                                                     :aggregate-name
-                                                                     :aggregate-id
-                                                                     :stream-version])]]))})
+            (xt/submit-tx (:node system) [[::xt/fn f (select-keys context [:event
+                                                                           :aggregate-name
+                                                                           :aggregate-id
+                                                                           :stream-version])]]))})
 
 (defn event-tx-fn
   [db-ctx event-ctx aggregations]
   (let [{:keys [event aggregate-name aggregate-id stream-version]} event-ctx
-        db (xt/db db-ctx)
-        last-event (db/fetch-last-event db aggregate-id)]
+        last-event (db/fetch-last-event (xt/db db-ctx) aggregate-id)]
 
     ;; there are 3 tx references in this function:
     ;; - the :stream-version of event-ctx is the expected version to be found in
@@ -120,12 +125,12 @@
 
 (defn register-command
   ;; todo command-name is only there to get clean name, but it could be generated
-  [aggregate-system command-name command]
+  [system command-name command]
   (let [interceptors (concat [{:error (fn [_ctx error] {:error error
                                                         ::muga/command-status ::muga/complete})}
                               (validate-command-params (:args-schema command))]
                              (:steps command)
-                             [(submit-event (keyword command-name))])
+                             [(submit-event system (keyword command-name))])
         log-before (fn [stage-f execution-context]
                      (int/before-stage stage-f
                                        (fn [context]
@@ -134,8 +139,8 @@
         stages (int/into-stages interceptors [:enter] log-before)
         command-fn (fn [id stream-version command-params]
                      (int/execute
-                       {:aggregate-system aggregate-system
-                        :aggregate-name (:aggregate-name aggregate-system)
+                       {:aggregate-system system
+                        :aggregate-name (:aggregate-name system)
                         :aggregate-id id
                         :stream-version stream-version
                         :command-params command-params}
@@ -144,8 +149,9 @@
                               (if (true? async)
                                 tx-aggrs
                                 (assoc tx-aggrs aggr-name aggr-def)))
-                            {} (:aggregations aggregate-system))]
+                            {} (:aggregations system))]
     (db/register-tx-fn
+      system
       (keyword command-name)
       `(fn ~'[db-ctx event-ctx]
          (muguet.internals.commands/event-tx-fn ~'db-ctx ~'event-ctx ~tx-aggrs)))
@@ -206,6 +212,7 @@
     (doseq [aggregation aggregations]
       ;; this function put new version of the aggregation
       (db/register-tx-fn
+        system
         (first aggregation)
         `(fn ~'[db-ctx event] (muguet.internals.commands/call-evolve ~aggregation ~'db-ctx ~'event))))
 
@@ -216,16 +223,18 @@
                                      (assoc async-aggrs aggr-name aggr-def)
                                      async-aggrs))
                                  {} aggregations)]
-      (db/register-tx-fn :update-async-aggregations
+      (db/register-tx-fn system
+                         :update-async-aggregations
                          `(fn ~'[db-ctx event-ctx]
                             (vec (map (fn ~'[aggr-name]
                                         [:xtdb.api/fn ~'aggr-name ~'event-ctx])
                                       ~(vec (keys async-aggrs))))))))
 
   ;; when an event is indexed, trigger the update of aggregations
-  (db/listen-events #(xt/submit-tx @db/node [[::xt/fn :update-async-aggregations %]]))
+  (db/listen-events system #(xt/submit-tx (:node system) [[::xt/fn :update-async-aggregations %]]))
   system)
 
 (defn fetch-aggregation
-  [aggregation-name id version]
-  (db/fetch-aggregation-version aggregation-name id version))
+  [system aggregation-name id version]
+  ;; todo check the aggregation-name exists
+  (db/fetch-aggregation-version system aggregation-name id version))

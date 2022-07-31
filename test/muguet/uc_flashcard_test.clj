@@ -138,14 +138,19 @@
 ;; |=--------------------------=[ Flashcard Tests ]=------------------------=|
 ;; |=-----------------------------------------------------------------------=|
 
+;; fixme kaocha tests fail the first time they run
+
+;; fixme tests are blinking sometimes
+
+;; fixme each test should close the system
 (deftest create-flashcard-test
   (let [system (mug/start! flashcard-system-config)
         id 1
         create-cmd (sut/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
-        {:keys [event ::muga/command-status]} (tu/blocking-fetch-command-result v1 id)
-        aggregate (sut/fetch-aggregation :flashcard/aggregate 1 v1)
+        {:keys [event ::muga/command-status]} (tu/blocking-fetch-command-result system v1 id)
+        aggregate (sut/fetch-aggregation system :flashcard/aggregate 1 v1)
         expected-event {:type :flashcard/created
                         :aggregate-id id
                         :body flashcard-init}]
@@ -156,8 +161,8 @@
     (is (= (:stream-version event) (:stream-version aggregate)) "aggregate and events have same stream-version")
 
     ;; -- the aggregate and event can be retrieved separately from a command result
-    (is (= [event] (db/fetch-event-history (xt/db @db/node) id)))
-    (is (= event (db/fetch-last-event-version (:stream-version event) id)))))
+    (is (= [event] (db/fetch-event-history (xt/db (:node system)) id)))
+    (is (= event (db/fetch-last-event-version system (:stream-version event) id)))))
 
 (deftest already-exists-test
   (let [system (mug/start! flashcard-system-config)
@@ -165,39 +170,38 @@
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (create-cmd 1 nil flashcard-init)
-        res2 (tu/blocking-fetch-command-result v2 1)]
+        res2 (tu/blocking-fetch-command-result system v2 1)]
     (is (= v1 (get-in res2 [:error :details :actual])))
     (is (= nil (get-in res2 [:error :details :expected])))))
 
-(deftest concurrent-test
-  (testing "concurrent hatching"
-    (let [system (mug/start! flashcard-system-config)
-          latch (CountDownLatch. 1)
-          ready (CountDownLatch. 10)
-          executor ^ExecutorService (Executors/newFixedThreadPool 10)
-          create-cmd (sut/get-command system :flashcard/create)
-          flashcard-init {:question "q?" :response "r" :id 1}
-          _ (future
-              (.await ready)
-              ; go !
-              (.countDown latch))
-          futures (.invokeAll executor ^Callable (repeat 10 (fn []
-                                                              (.countDown ready)
-                                                              ;; ready ?
-                                                              (.await latch)
-                                                              ;; go !
-                                                              (create-cmd 1 nil flashcard-init))))
-          res (mapv (fn [future] (tu/blocking-fetch-command-result @future 1)) futures)
-          error? #(contains? % :error)]
-      (is (every? (fn [r] (= ::muga/complete (::muga/command-status r))) res) "every command can retrieve a result")
-      (is (= 1 (count (remove error? res))) "only 1 command succeeds")
-      (is (= 9 (count (filter error? res))) "9 commands failed"))))
+(deftest concurrent-creation-test
+  (let [system (mug/start! flashcard-system-config)
+        latch (CountDownLatch. 1)
+        ready (CountDownLatch. 10)
+        executor ^ExecutorService (Executors/newFixedThreadPool 10)
+        create-cmd (sut/get-command system :flashcard/create)
+        flashcard-init {:question "q?" :response "r" :id 1}
+        _ (future
+            (.await ready)
+            ; go !
+            (.countDown latch))
+        futures (.invokeAll executor ^Callable (repeat 10 (fn []
+                                                            (.countDown ready)
+                                                            ;; ready ?
+                                                            (.await latch)
+                                                            ;; go !
+                                                            (create-cmd 1 nil flashcard-init))))
+        res (mapv (fn [future] (tu/blocking-fetch-command-result system @future 1)) futures)
+        error? #(contains? % :error)]
+    (is (every? (fn [r] (= ::muga/complete (::muga/command-status r))) res) "every command can retrieve a result")
+    (is (= 1 (count (remove error? res))) "only 1 command succeeds")
+    (is (= 9 (count (filter error? res))) "9 commands failed")))
 
 (deftest invalid-arguments-test
   (let [system (mug/start! flashcard-system-config)
         create (sut/get-command system :flashcard/create)
         v1 (create 1 nil nil)
-        res (tu/blocking-fetch-command-result v1 1)]
+        res (tu/blocking-fetch-command-result system v1 1)]
     (is (= :invalid (get-in res [:error :status])))))
 
 (deftest rate-flashcard-test
@@ -206,15 +210,15 @@
         create-cmd (sut/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
-        create-result (tu/blocking-fetch-command-result v1 id)
+        create-result (tu/blocking-fetch-command-result system v1 id)
         created-event (:event create-result)
         _ (is (= :muguet.api/complete (:muguet.api/command-status create-result)))
 
         rate-cmd (sut/get-command system :flashcard/rate)
         rating 4
         v2 (rate-cmd id v1 rating)
-        {rated-event :event} (tu/blocking-fetch-command-result v2 id)
-        fc-rated (sut/fetch-aggregation :flashcard/aggregate id v2)]
+        {rated-event :event} (tu/blocking-fetch-command-result system v2 id)
+        fc-rated (sut/fetch-aggregation system :flashcard/aggregate id v2)]
     (is (= {:type :flashcard/rated
             :aggregate-id id
             :body rating}
@@ -222,7 +226,7 @@
     (is (= flashcard-init (dissoc fc-rated :due-date ::muga/document-type :stream-version)))
     (is (pos-int? (compare (:due-date fc-rated) (LocalDateTime/now))))
 
-    (is (= [created-event rated-event] (db/fetch-event-history (xt/db @db/node) id)))))
+    (is (= [created-event rated-event] (db/fetch-event-history (xt/db (:node system)) id)))))
 
 (deftest invalid-version-test
   (let [system (mug/start! flashcard-system-config)
@@ -231,7 +235,7 @@
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (rate-cmd 1 v1 5)
-        result (tu/blocking-fetch-command-result (rate-cmd 1 v1 3) 1)]
+        result (tu/blocking-fetch-command-result system (rate-cmd 1 v1 3) 1)]
     (is (= v2 (get-in result [:error :details :actual])))
     (is (= v1 (get-in result [:error :details :expected])))))
 
@@ -241,7 +245,7 @@
         init-values (map (fn [id] {:question "q?" :response "r" :id id}) (range 10))
         _ (mapv (fn [init-value]
                   (let [version (create (:id init-value) nil init-value)]
-                    (tu/blocking-fetch-command-result version (:id init-value))))
+                    (tu/blocking-fetch-command-result system version (:id init-value))))
                 init-values)
         all (views/all-aggregations system :flashcard/aggregate)]
     (is (= init-values (sort-by :id (map #(dissoc % :stream-version) all))))))
@@ -252,36 +256,36 @@
         rate (sut/get-command system :flashcard/rate)
 
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
-        _ (is (tu/blocking-fetch-command-result v1 1))
+        _ (is (tu/blocking-fetch-command-result system v1 1))
         _ (is (= {:number 0 :sum 0}
-                 (dissoc (sut/fetch-aggregation :flashcard/mean-transactional 1 v1) :stream-version)))
+                 (dissoc (sut/fetch-aggregation system :flashcard/mean-transactional 1 v1) :stream-version)))
 
         v2 (rate 1 v1 5)
-        _ (tu/blocking-fetch-command-result v2 1)
+        _ (tu/blocking-fetch-command-result system v2 1)
         _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
-                 (sut/fetch-aggregation :flashcard/mean-transactional 1 v2)))
+                 (sut/fetch-aggregation system :flashcard/mean-transactional 1 v2)))
 
         v3 (rate 1 v2 0)
-        _ (tu/blocking-fetch-command-result v3 1)
+        _ (tu/blocking-fetch-command-result system v3 1)
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
-                 (sut/fetch-aggregation :flashcard/mean-transactional 1 v3)))]))
+                 (sut/fetch-aggregation system :flashcard/mean-transactional 1 v3)))]))
 
 (deftest mean-aggregation-async-test
   (let [system (mug/start! flashcard-system-config)
         create (sut/get-command system :flashcard/create)
         rate (sut/get-command system :flashcard/rate)
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
-        _ (is (nil? (sut/fetch-aggregation :flashcard/mean-async 1 v1)))
+        _ (is (nil? (sut/fetch-aggregation system :flashcard/mean-async 1 v1)))
         v2 (rate 1 v1 5)
         ;; The aggregation update gets delayed, so we wait a bit ...
         ;; todo don't use Thread/sleep
         _ (Thread/sleep 200)
         _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
-                 (sut/fetch-aggregation :flashcard/mean-async 1 v2)))
+                 (sut/fetch-aggregation system :flashcard/mean-async 1 v2)))
         v3 (rate 1 v2 0)
         _ (Thread/sleep 200)
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
-                 (sut/fetch-aggregation :flashcard/mean-async 1 v3)))]))
+                 (sut/fetch-aggregation system :flashcard/mean-async 1 v3)))]))
 
 (defn evolve-broken
   [aggregation event]
@@ -296,7 +300,7 @@
                                         :evolve `evolve-broken
                                         :schema nil}))
           v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
-          result (tu/blocking-fetch-command-result v1 1)]
+          result (tu/blocking-fetch-command-result system v1 1)]
       (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
               ::muga/command-status ::muga/complete} result)))))
 

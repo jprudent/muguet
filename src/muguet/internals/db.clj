@@ -3,10 +3,6 @@
             [xtdb.api :as xt])
   (:import (java.time Duration)))
 
-;; todo set in system, not in a global var
-(defonce node (atom nil))
-
-
 (defn- extract-events [xt-event]
   (loop [acc []
          ops (:xtdb.api/tx-ops xt-event)]
@@ -22,8 +18,8 @@
 
 
 
-(defn listen-events [on-event]
-  (xt/listen @node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
+(defn listen-events [system on-event]
+  (xt/listen (:node system) {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
              (fn
                ;; xt-event is not a muguet event, it's an event inside xtdb
                [xt-event]
@@ -32,7 +28,7 @@
                    (on-event event))))))
 
 (defn register-tx-fn
-  [id f]
+  [system id f]
   ;; todo check f is a LIST (source code fn) with proper arguments
   ;;      see how we can get the source code if it's a fn ?
   ;;      maybe we can just wrap f in a list because it feels weird they have to do some xtdb shit in upper layer...
@@ -41,8 +37,8 @@
   ;  (let [db (xtdb.api/db ctx)
   ;        entity (xtdb.api/entity db eid)]
   ;    [[::xt/put (update entity :age inc)]]))
-  (xt/await-tx @node (xt/submit-tx @node [[::xt/put {:xt/id id
-                                                     :xt/fn f}]])
+  (xt/await-tx (:node system) (xt/submit-tx (:node system) [[::xt/put {:xt/id id
+                                                                       :xt/fn f}]])
                (Duration/ofSeconds 1)))
 
 (defn id->xt-aggregate-id [id] (str id "_aggregate"))
@@ -86,17 +82,17 @@
   The sole stream-version is not enough because there can be several document inserted with the same stream-version
   (in case of multiple events emitted in a command)"
   ;; todo from comment above, maybe instroduce a document "coordinates" that contains version and id ?
-  [stream-version id]
-  (clean-doc (ffirst (xt/q (xt/db @node)
+  [system version id]
+  (clean-doc (ffirst (xt/q (xt/db (:node system))
                            '{:find [(pull ?last-event [*])]
                              :in [xt-id version]
                              :where [[?last-event :xt/id xt-id]
                                      [?last-event :stream-version version]]}
-                           (id->xt-last-event-id id) stream-version))))
+                           (id->xt-last-event-id id) version))))
 
 (defn fetch-error-version
-  [stream-version id]
-  (with-open [cursor (xt/open-entity-history (xt/db @node) (id->xt-error-id id) :asc
+  [system stream-version id]
+  (with-open [cursor (xt/open-entity-history (xt/db (:node system)) (id->xt-error-id id) :asc
                                              {:with-docs? true
                                               :with-corrections? true
                                               :start-tx-id (:tx-id stream-version)})]
@@ -106,10 +102,10 @@
                        history)))))
 
 (defn all-aggregations
-  [aggregate-name aggregation-name]
+  [system aggregate-name aggregation-name]
   (map
     (comp clean-doc first)
-    (xt/q (xt/db @node)
+    (xt/q (xt/db (:node system))
           '{:find [(pull aggregate [*])]
             :in [aggregate-name aggregation-name]
             :where [[aggregate ::muga/aggregate-name aggregate-name]
@@ -117,10 +113,10 @@
           aggregate-name aggregation-name)))
 
 ;; fixme in multi aggregate system there will be id conflicts
-(defn fetch-aggregation-version [aggregation-name id version]
+(defn fetch-aggregation-version [system aggregation-name id version]
   (clean-doc
     (ffirst
-      (xt/q (xt/db @node)
+      (xt/q (xt/db (:node system))
             '{:find [(pull ?aggregation [*])]
               :in [xt-id version]
               :where [[?aggregation :xt/id xt-id]
@@ -128,9 +124,10 @@
             (id->xt-aggregation-id aggregation-name id)
             version))))
 
+;; fixme: must depends on db, not node
 (defn fetch-last-event [db aggregate-id]
-  (clean-doc (ffirst (xt/q (xt/db @node)
-                           '{:find [(pull ?last-event [*])]
-                             :in [xt-id]
-                             :where [[?last-event :xt/id xt-id]]}
+  ;; todo can use xt/pull directly
+  (clean-doc (ffirst (xt/q db '{:find [(pull ?last-event [*])]
+                                :in [xt-id]
+                                :where [[?last-event :xt/id xt-id]]}
                            (id->xt-last-event-id aggregate-id)))))

@@ -6,9 +6,9 @@
 
 
 (defn blocking-fetch-command-result
-  [version id]
+  [system version id]
   (dh/with-retry
     {:retry-if (fn [ret _ex] (= ::muga/pending (::muga/command-status ret)))
      :delay-ms 10
      :max-duration-ms 5000}
-    (cmd/fetch-command-result version id)))
+    (cmd/fetch-command-result system version id)))

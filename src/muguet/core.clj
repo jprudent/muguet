@@ -2,23 +2,24 @@
   ;; todo write a meaningful documentation of this namespace
   (:require [clojure.tools.logging :as log]
             [muguet.internals.commands :as mug-cmd]
-            [muguet.internals.db :as db]
             [muguet.internals.meta-schemas :as meta]
             [xtdb.api :as xt]))
 
 (defn start!
   [system]
-  (when-let [node @db/node] (.close node))
-  (reset! db/node (xt/start-node {}))
   ;; start logging
-  (xt/listen @db/node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true} #(log/debug "Tx commited:" (prn-str %)))
-  (let [{:keys [schema] :as system} system]
-    (if (meta/validate schema)
-      (-> (mug-cmd/assoc-event-builders system)
-          (mug-cmd/register-aggregations!)
-          #_(mug-cmd/register-evolve-functions!)
-          (mug-cmd/register-commands!))
-      (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {}))))))
+  (let [node (xt/start-node {})]
+    (try
+      (xt/listen node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true} #(log/debug "Tx commited:" (prn-str %)))
+      (let [{:keys [schema] :as system} system]
+        (if (meta/validate schema)
+          (-> system
+              (assoc :node (xt/start-node {}))
+              (mug-cmd/assoc-event-builders)
+              (mug-cmd/register-aggregations!)
+              (mug-cmd/register-commands!))
+          (throw (ex-info "invalid aggregate schema" (or (meta/explain schema) {})))))
+      (catch Exception e (.close node) (throw e)))))
 
 (defn build-event
   [type event-body-fn]
