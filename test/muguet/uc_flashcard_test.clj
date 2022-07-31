@@ -2,7 +2,6 @@
   "Those tests are using the real implementation of database through an in-memory instance of XTDB"
   (:require [clojure.test :refer :all]
     ;; todo should only import public apis
-            [clojure.tools.logging :as log]
             [malli.core :as m]
             [malli.util :as mu]
             [muguet.api :as muga]
@@ -89,14 +88,6 @@
     :flashcard/rated
     (mean aggregation (:body event))))
 
-(def broken? (atom false))
-
-(defn evolve-broken
-  [aggregation event]
-  (when @broken?
-    (throw (ex-info "Broken aggregation" {:aggregation aggregation
-                                          :event event}))))
-
 (def flashcard-system-config
   {:schema flashcard-schema
    :aggregate-name :flashcard
@@ -141,26 +132,16 @@
                   :flashcard/mean-async {:doc "An async aggregate that represents the mean rating of a flashcard"
                                          :evolve `evolve-mean
                                          :schema MeanAggregation
-                                         :async true}
-                  :flashcard/broken-transactional {:doc "A transactional aggregation that can throw exceptions"
-                                                   :evolve `evolve-broken
-                                                   :schema nil}}})
-
-(def flashcard-system (atom nil))
+                                         :async true}}}),
 
 ;; |=-----------------------------------------------------------------------=|
 ;; |=--------------------------=[ Flashcard Tests ]=------------------------=|
 ;; |=-----------------------------------------------------------------------=|
 
-(use-fixtures :each (fn [f]
-                      (log/info "-=[ Initialize Muguet ]=-")
-                      (reset! flashcard-system (mug/start! flashcard-system-config))
-                      (log/info "-=[ Strarting Test ]=-")
-                      (f)))
-
 (deftest create-flashcard-test
-  (let [id 1
-        create-cmd (sut/get-command @flashcard-system :flashcard/create)
+  (let [system (mug/start! flashcard-system-config)
+        id 1
+        create-cmd (sut/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
         {:keys [event ::muga/command-status]} (tu/blocking-fetch-command-result v1 id)
@@ -179,7 +160,8 @@
     (is (= event (db/fetch-last-event-version (:stream-version event) id)))))
 
 (deftest already-exists-test
-  (let [create-cmd (sut/get-command @flashcard-system :flashcard/create)
+  (let [system (mug/start! flashcard-system-config)
+        create-cmd (sut/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (create-cmd 1 nil flashcard-init)
@@ -189,10 +171,11 @@
 
 (deftest concurrent-test
   (testing "concurrent hatching"
-    (let [latch (CountDownLatch. 1)
+    (let [system (mug/start! flashcard-system-config)
+          latch (CountDownLatch. 1)
           ready (CountDownLatch. 10)
           executor ^ExecutorService (Executors/newFixedThreadPool 10)
-          create-cmd (sut/get-command @flashcard-system :flashcard/create)
+          create-cmd (sut/get-command system :flashcard/create)
           flashcard-init {:question "q?" :response "r" :id 1}
           _ (future
               (.await ready)
@@ -211,21 +194,23 @@
       (is (= 9 (count (filter error? res))) "9 commands failed"))))
 
 (deftest invalid-arguments-test
-  (let [create (sut/get-command @flashcard-system :flashcard/create)
+  (let [system (mug/start! flashcard-system-config)
+        create (sut/get-command system :flashcard/create)
         v1 (create 1 nil nil)
         res (tu/blocking-fetch-command-result v1 1)]
     (is (= :invalid (get-in res [:error :status])))))
 
 (deftest rate-flashcard-test
-  (let [id 1
-        create-cmd (sut/get-command @flashcard-system :flashcard/create)
+  (let [system (mug/start! flashcard-system-config)
+        id 1
+        create-cmd (sut/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
         create-result (tu/blocking-fetch-command-result v1 id)
         created-event (:event create-result)
         _ (is (= :muguet.api/complete (:muguet.api/command-status create-result)))
 
-        rate-cmd (sut/get-command @flashcard-system :flashcard/rate)
+        rate-cmd (sut/get-command system :flashcard/rate)
         rating 4
         v2 (rate-cmd id v1 rating)
         {rated-event :event} (tu/blocking-fetch-command-result v2 id)
@@ -240,8 +225,9 @@
     (is (= [created-event rated-event] (db/fetch-event-history (xt/db @db/node) id)))))
 
 (deftest invalid-version-test
-  (let [create-cmd (sut/get-command @flashcard-system :flashcard/create)
-        rate-cmd (sut/get-command @flashcard-system :flashcard/rate)
+  (let [system (mug/start! flashcard-system-config)
+        create-cmd (sut/get-command system :flashcard/create)
+        rate-cmd (sut/get-command system :flashcard/rate)
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (rate-cmd 1 v1 5)
@@ -250,18 +236,20 @@
     (is (= v1 (get-in result [:error :details :expected])))))
 
 (deftest view-all-test
-  (let [create (sut/get-command @flashcard-system :flashcard/create)
+  (let [system (mug/start! flashcard-system-config)
+        create (sut/get-command system :flashcard/create)
         init-values (map (fn [id] {:question "q?" :response "r" :id id}) (range 10))
         _ (mapv (fn [init-value]
                   (let [version (create (:id init-value) nil init-value)]
                     (tu/blocking-fetch-command-result version (:id init-value))))
                 init-values)
-        all (views/all-aggregations @flashcard-system :flashcard/aggregate)]
+        all (views/all-aggregations system :flashcard/aggregate)]
     (is (= init-values (sort-by :id (map #(dissoc % :stream-version) all))))))
 
 (deftest mean-aggregation-transactional-test
-  (let [create (sut/get-command @flashcard-system :flashcard/create)
-        rate (sut/get-command @flashcard-system :flashcard/rate)
+  (let [system (mug/start! flashcard-system-config)
+        create (sut/get-command system :flashcard/create)
+        rate (sut/get-command system :flashcard/rate)
 
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
         _ (is (tu/blocking-fetch-command-result v1 1))
@@ -279,8 +267,9 @@
                  (sut/fetch-aggregation :flashcard/mean-transactional 1 v3)))]))
 
 (deftest mean-aggregation-async-test
-  (let [create (sut/get-command @flashcard-system :flashcard/create)
-        rate (sut/get-command @flashcard-system :flashcard/rate)
+  (let [system (mug/start! flashcard-system-config)
+        create (sut/get-command system :flashcard/create)
+        rate (sut/get-command system :flashcard/rate)
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
         _ (is (nil? (sut/fetch-aggregation :flashcard/mean-async 1 v1)))
         v2 (rate 1 v1 5)
@@ -294,17 +283,25 @@
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
                  (sut/fetch-aggregation :flashcard/mean-async 1 v3)))]))
 
+(defn evolve-broken
+  [aggregation event]
+  (throw (ex-info "Broken aggregation" {:aggregation aggregation
+                                        :event event})))
 
 (deftest broken-transactional-rollback-test
   (testing "A broken aggregation rollbacks the whole transaction"
-    (try
-      (reset! broken? true)
-      (let [v1 (mug/command @flashcard-system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
-            result (tu/blocking-fetch-command-result v1 1)]
-        (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
-                ::muga/command-status ::muga/complete} result)))
-      (finally (reset! broken? false)))))
+    (let [system (mug/start! (assoc-in flashcard-system-config
+                                       [:aggregations :flashcard/broken-tx]
+                                       {:doc "A transactional aggregation that can throw exceptions"
+                                        :evolve `evolve-broken
+                                        :schema nil}))
+          v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+          result (tu/blocking-fetch-command-result v1 1)]
+      (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
+              ::muga/command-status ::muga/complete} result)))))
 
 ;; todo multisystem tests`
 
 ;; todo a command that decides multiple events
+
+;; todo an aggregation on several aggregates
