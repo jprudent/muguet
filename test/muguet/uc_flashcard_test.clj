@@ -129,22 +129,22 @@
    ;; aggregation name to make things clearer in my test case. There is no
    ;; conventions whatsoever.
 
-   :aggregations-per-aggregate-id {:flashcard/aggregate {:doc "Reference aggregate for a flashcard.
+   :aggregations {:flashcard/aggregate {:doc "Reference aggregate for a flashcard.
    This is the kind of document you would store in a conventional database.
    Can be fetched in commands to check the validity of the command."
-                                                         :evolve `evolve-aggregate
-                                                         :schema (m/form (mu/optional-keys flashcard-schema [:due-date]))}
-                                   :flashcard/mean-transactional {:doc "A transactional aggregate that represents the mean rating of a flashcard"
-                                                                  :evolve `evolve-mean
-                                                                  ;; todo test that the schema is checked
-                                                                  :schema MeanAggregation}
-                                   :flashcard/mean-async {:doc "An async aggregate that represents the mean rating of a flashcard"
-                                                          :evolve `evolve-mean
-                                                          :schema MeanAggregation
-                                                          :async true}
-                                   :flashcard/broken-transactional {:doc "A transactional aggregation that can throw exceptions"
-                                                                    :evolve `evolve-broken
-                                                                    :schema nil}}})
+                                        :evolve `evolve-aggregate
+                                        :schema (m/form (mu/optional-keys flashcard-schema [:due-date]))}
+                  :flashcard/mean-transactional {:doc "A transactional aggregate that represents the mean rating of a flashcard"
+                                                 :evolve `evolve-mean
+                                                 ;; todo test that the schema is checked
+                                                 :schema MeanAggregation}
+                  :flashcard/mean-async {:doc "An async aggregate that represents the mean rating of a flashcard"
+                                         :evolve `evolve-mean
+                                         :schema MeanAggregation
+                                         :async true}
+                  :flashcard/broken-transactional {:doc "A transactional aggregation that can throw exceptions"
+                                                   :evolve `evolve-broken
+                                                   :schema nil}}})
 
 (def flashcard-system (atom nil))
 

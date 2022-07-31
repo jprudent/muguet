@@ -144,7 +144,7 @@
                               (if (true? async)
                                 tx-aggrs
                                 (assoc tx-aggrs aggr-name aggr-def)))
-                            {} (:aggregations-per-aggregate-id aggregate-system))]
+                            {} (:aggregations aggregate-system))]
     (db/register-tx-fn
       (keyword command-name)
       `(fn ~'[db-ctx event-ctx]
@@ -200,7 +200,7 @@
 
 (defn register-aggregations!
   [system]
-  (when-let [aggregations (not-empty (get system :aggregations-per-aggregate-id))]
+  (when-let [aggregations (not-empty (get system :aggregations))]
     ;; register all functions that evolve aggregations
     ;; there is only one such function per aggregation, be it async or not
     (doseq [aggregation aggregations]
