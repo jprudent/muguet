@@ -198,23 +198,46 @@
         db (xt/db db-ctx)
         existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
     ;; todo check schema of the aggregation here
-    [[::xt/put (assoc (evolve existing-aggregation event)
-                 :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
-                 ::muga/document-type aggr-name
-                 ::muga/aggregate-name aggregate-name
-                 :stream-version (:stream-version event))]]))
+    (if (= ::muga/error (:status existing-aggregation))
+      (log/error "This aggregation is erroneous. Fix it." (pr-str existing-aggregation))
+      [[::xt/put (assoc (evolve existing-aggregation event)
+                   :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
+                   ::muga/document-type aggr-name
+                   ::muga/aggregate-name aggregate-name
+                   :stream-version (:stream-version event))]])))
+
+(defn async-aggregation-error
+  [aggregation db-ctx event exception]
+  (let [[aggr-name _aggr-desc] aggregation
+        aggregate-id (:aggregate-id event)
+        db (xt/db db-ctx)]
+    [[::xt/put {:xt/id (muguet.internals.db/id->xt-aggregation-id aggr-name aggregate-id)
+                :stream-version (:stream-version event)
+                :status ::muga/error
+                ::muga/aggregate-name aggr-name
+                ::muga/document-type ::muga/error
+                :message "An error occurred trying to evolve the aggregation.
+                 This is likely a bug in the evolve function.
+                 Check the logs.
+                 To reproduce the error, try to run the evolve function against the event and aggregation found in the details of this document.
+                 This aggregation will stop to evolve until something is done.
+                 You'll have to recompute this aggregation when the bug is fixed."
+                :details {:event (db/clean-doc event)
+                          :aggregation (db/fetch-aggregation db aggr-name aggregate-id)
+                          :exception exception}}]]))
 
 (defn register-aggregations!
   [system]
   (when-let [aggregations (not-empty (get system :aggregations))]
     ;; register all functions that evolve aggregations
-    ;; there is only one such function per aggregation, be it async or not
-    (doseq [aggregation aggregations]
-      ;; this function put new version of the aggregation
-      (db/register-tx-fn
-        system
-        (first aggregation)
-        `(fn ~'[db-ctx event] (muguet.internals.commands/call-evolve ~aggregation ~'db-ctx ~'event))))
+    (doseq [aggregation aggregations
+            :let [transactional-evolve `(fn ~'[db-ctx event] (muguet.internals.commands/call-evolve ~aggregation ~'db-ctx ~'event))
+                  async-evolve `(fn ~'[db-ctx event]
+                                  (try (muguet.internals.commands/call-evolve ~aggregation ~'db-ctx ~'event)
+                                       (catch ~'Exception ~'e
+                                         (muguet.internals.commands/async-aggregation-error ~aggregation ~'db-ctx ~'event ~'e))))]]
+      (db/register-tx-fn system (first aggregation) transactional-evolve)
+      (db/register-tx-fn system (str (first aggregation) "_async") async-evolve))
 
     ;; register the function that updates all async aggregations
     ;; it calls all functions that update async aggregations
@@ -227,13 +250,15 @@
                          :update-async-aggregations
                          `(fn ~'[db-ctx event-ctx]
                             (vec (map (fn ~'[aggr-name]
-                                        [:xtdb.api/fn ~'aggr-name ~'event-ctx])
+                                        [:xtdb.api/fn (str ~'aggr-name "_async") ~'event-ctx])
                                       ~(vec (keys async-aggrs))))))))
 
   ;; when an event is indexed, trigger the update of aggregations
   (db/listen-events system #(xt/submit-tx (:node system) [[::xt/fn :update-async-aggregations %]]))
   system)
 
+
+;; fixme introduct an aggregate "coordinate" with id and version. That will save an arity and avoid arg misplacements #truestory
 (defn fetch-aggregation
   [system aggregation-name id version]
   ;; todo check the aggregation-name exists

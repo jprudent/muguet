@@ -302,7 +302,65 @@
           v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
           result (tu/blocking-fetch-command-result system v1 1)]
       (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
-              ::muga/command-status ::muga/complete} result)))))
+              ::muga/command-status ::muga/complete} result))
+      (is (= nil (db/fetch-last-event-version system v1 1))))))
+
+(deftest broken-async-aggregation-test
+  (let [system (mug/start! (assoc-in flashcard-system-config
+                                     [:aggregations :flashcard/broken-async]
+                                     {:doc "A transactional aggregation that can throw exceptions"
+                                      :evolve `evolve-broken
+                                      :schema nil
+                                      :async true}))
+        v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+        result-v1 (tu/blocking-fetch-command-result system v1 1)
+        aggregate (sut/fetch-aggregation system :flashcard/aggregate 1 v1)
+        expected-error {:details {:aggregation nil
+                                  :event (:event result-v1)}
+                        :message "An error occurred trying to evolve the aggregation.
+                 This is likely a bug in the evolve function.
+                 Check the logs.
+                 To reproduce the error, try to run the evolve function against the event and aggregation found in the details of this document.
+                 This aggregation will stop to evolve until something is done.
+                 You'll have to recompute this aggregation when the bug is fixed."
+                        :status :muguet.api/error
+                        :stream-version (get-in result-v1 [:event :stream-version])}]
+    ;; the transaction succeeded
+    (is (= :flashcard/created (get-in result-v1 [:event :type])))
+    (is (= (:event result-v1) (db/fetch-last-event-version system v1 1)))
+    (is (= 1 (:id aggregate)))
+
+    ;; but the aggregate can't be found
+    ;; todo still have to find a better way that thread sleeping
+    (Thread/sleep 500)
+
+    (is (= {:number 0
+            :stream-version (get-in result-v1 [:event :stream-version])
+            :sum 0} (sut/fetch-aggregation system :flashcard/mean-async 1 v1))
+        "Other async aggregations continue to evolve")
+    (is (= expected-error
+           (update (sut/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
+        "Instead of the aggregation, an error document is stored.")
+
+    (let [v2 (mug/command system :flashcard/rate 1 v1 5)
+          result-v2 (tu/blocking-fetch-command-result system v2 1)]
+
+      (is (= :flashcard/rated (get-in result-v2 [:event :type])))
+
+      ;; todo still have to find a better way that thread sleeping
+      (Thread/sleep 500)
+
+      (is (= {:number 1
+              :stream-version (get-in result-v2 [:event :stream-version])
+              :sum 5
+              :mean 5.0} (sut/fetch-aggregation system :flashcard/mean-async 1 v2))
+          "Other async aggregations continue to evolve")
+
+      (is (nil? (sut/fetch-aggregation system :flashcard/broken-async 1 v2))
+          "There is no new version for this aggregation")
+      (is (= expected-error
+             (update (sut/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
+          "The aggregation is not updated and will be freezed forever."))))
 
 ;; todo multisystem tests`
 

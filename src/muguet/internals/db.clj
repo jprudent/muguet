@@ -41,7 +41,6 @@
                                                                        :xt/fn f}]])
                (Duration/ofSeconds 1)))
 
-(defn id->xt-aggregate-id [id] (str id "_aggregate"))
 (defn id->xt-last-event-id [id] (str id "_last_event"))
 (defn id->xt-error-id [id] (str id "_error"))
 (defn id->xt-aggregation-id [aggregation-name id] (str id "_" (name aggregation-name)))
@@ -54,15 +53,6 @@
   ;; :stream-version is part of the API
   (when doc
     (dissoc doc :xt/id ::muga/aggregate-name ::muga/document-type)))
-
-(defn fetch-aggregate
-  ; The DB must be provided because it's the context it provides a context
-  ; If it was not required, it would have been fetch from the node without any
-  ; kind of context.
-  ; todo could also use version as a query context
-  "Utility function that fetch an aggregate by id"
-  [db id]
-  (clean-doc (xt/entity db (id->xt-aggregate-id id))))
 
 (defn fetch-aggregation
   [db aggregation-name id]
@@ -124,7 +114,6 @@
             (id->xt-aggregation-id aggregation-name id)
             version))))
 
-;; fixme: must depends on db, not node
 (defn fetch-last-event [db aggregate-id]
   ;; todo can use xt/pull directly
   (clean-doc (ffirst (xt/q db '{:find [(pull ?last-event [*])]

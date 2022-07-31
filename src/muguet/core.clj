@@ -10,7 +10,8 @@
   ;; start logging
   (let [node (xt/start-node {})]
     (try
-      (xt/listen node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true} #(log/debug "Tx commited:" (prn-str %)))
+      (xt/listen node {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
+                 #(log/info "====Tx commited:" (prn-str %)))
       (let [{:keys [schema] :as system} system]
         (if (meta/validate schema)
           (-> system
