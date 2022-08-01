@@ -362,6 +362,30 @@
              (update (sut/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
           "The aggregation is not updated and will be freezed forever."))))
 
+(def recompute-init (atom 0))
+
+(defn recompute
+  [aggregation _event]
+  (update aggregation :counter (fnil inc @recompute-init)))
+
+(deftest recompute-transactional-aggregation-test
+  (let [system (mug/start! (assoc-in flashcard-system-config
+                                     [:aggregations :flashcard/recompute-tx]
+                                     {:doc "A transactional aggregation that will be recomputed"
+                                      :evolve `recompute
+                                      :schema nil}))
+        #_#__ (xt/listen (:node system) {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
+                         (fn [xt-event] (prn "====Tx commited:" xt-event)))
+        _ (reset! recompute-init 0)
+        v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+        v2 (mug/command system :flashcard/rate 1 v1 5)
+        _result (tu/blocking-fetch-command-result system v2 1)
+        aggregation (sut/fetch-aggregation system :flashcard/recompute-tx 1 v2)]
+    (is (= 2 (:counter aggregation)))
+    (reset! recompute-init 1000)
+    (mug/recompute-aggregation system :flashcard/recompute-tx)
+    (is (= 1002 (:counter (sut/fetch-aggregation system :flashcard/recompute-tx 1 v2))))))
+
 ;; todo multisystem tests`
 
 ;; todo a command that decides multiple events

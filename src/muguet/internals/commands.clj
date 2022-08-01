@@ -188,23 +188,34 @@
                               (assoc-event-builder))))
                       % %)))
 
+(defn make-aggregation-document
+  [aggregation aggregate-id aggregation-name aggregate-name event]
+  (assoc aggregation
+    :xt/id (db/id->xt-aggregation-id aggregation-name aggregate-id)
+    ::muga/document-type aggregation-name
+    ::muga/aggregate-name aggregate-name
+    :stream-version (:stream-version event)))
+
 ;; we don't need to check stream-version because events are called event after
 ;; event, so they are indexed in that order
 (defn call-evolve
   [aggregation db-ctx event]
   (let [{:keys [aggregate-id ::muga/aggregate-name]} event
-        [aggr-name aggr-desc] aggregation
+        [aggregation-name aggr-desc] aggregation
         {:keys [evolve]} aggr-desc
         db (xt/db db-ctx)
-        existing-aggregation (db/fetch-aggregation db aggr-name aggregate-id)]
+        existing-aggregation (db/fetch-aggregation db aggregation-name aggregate-id)]
     ;; todo check schema of the aggregation here
     (if (= ::muga/error (:status existing-aggregation))
       (log/error "This aggregation is erroneous. Fix it." (pr-str existing-aggregation))
-      [[::xt/put (assoc (evolve existing-aggregation event)
-                   :xt/id (db/id->xt-aggregation-id aggr-name aggregate-id)
-                   ::muga/document-type aggr-name
-                   ::muga/aggregate-name aggregate-name
-                   :stream-version (:stream-version event))]])))
+      ;; fixme the aggregation must have same valid time than the event
+      ;;   so, event async aggrgations have same validity than the event that triggers it
+      [[::xt/put (make-aggregation-document
+                   (evolve existing-aggregation event)
+                   aggregate-id
+                   aggregation-name
+                   aggregate-name
+                   event)]])))
 
 (defn async-aggregation-error
   [aggregation db-ctx event exception]
