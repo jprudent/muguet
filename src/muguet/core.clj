@@ -34,9 +34,12 @@
                   event (event-builder aggregate-id (event-body-fn context))]
               (assoc context :event event)))})
 
+(defn get-command [system command-name]
+  (get-in system [:commands command-name]))
+
 (defn command
   [system command-name aggregate-id version command-arg]
-  (if-let [command (mug-cmd/get-command system command-name)]
+  (if-let [command (get-command system command-name)]
     (command aggregate-id version command-arg)
     (throw (ex-info (str command-name " doesn't exist.") {:command-name command-name
                                                           :system system}))))

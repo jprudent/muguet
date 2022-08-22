@@ -175,9 +175,6 @@
              system
              (:commands system)))
 
-(defn get-command [system command-name]
-  (get-in system [:commands command-name]))
-
 (defn assoc-event-builders [system]
   (update system :events
           #(reduce-kv (fn [registry event-type event]

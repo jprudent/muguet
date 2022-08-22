@@ -146,7 +146,7 @@
 (deftest create-flashcard-test
   (let [system (mug/start! flashcard-system-config)
         id 1
-        create-cmd (sut/get-command system :flashcard/create)
+        create-cmd (mug/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
         {:keys [event ::muga/command-status]} (tu/blocking-fetch-command-result system v1 id)
@@ -166,7 +166,7 @@
 
 (deftest already-exists-test
   (let [system (mug/start! flashcard-system-config)
-        create-cmd (sut/get-command system :flashcard/create)
+        create-cmd (mug/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (create-cmd 1 nil flashcard-init)
@@ -179,7 +179,7 @@
         latch (CountDownLatch. 1)
         ready (CountDownLatch. 10)
         executor ^ExecutorService (Executors/newFixedThreadPool 10)
-        create-cmd (sut/get-command system :flashcard/create)
+        create-cmd (mug/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id 1}
         _ (future
             (.await ready)
@@ -199,7 +199,7 @@
 
 (deftest invalid-arguments-test
   (let [system (mug/start! flashcard-system-config)
-        create (sut/get-command system :flashcard/create)
+        create (mug/get-command system :flashcard/create)
         v1 (create 1 nil nil)
         res (tu/blocking-fetch-command-result system v1 1)]
     (is (= :invalid (get-in res [:error :status])))))
@@ -207,14 +207,14 @@
 (deftest rate-flashcard-test
   (let [system (mug/start! flashcard-system-config)
         id 1
-        create-cmd (sut/get-command system :flashcard/create)
+        create-cmd (mug/get-command system :flashcard/create)
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
         create-result (tu/blocking-fetch-command-result system v1 id)
         created-event (:event create-result)
         _ (is (= :muguet.api/complete (:muguet.api/command-status create-result)))
 
-        rate-cmd (sut/get-command system :flashcard/rate)
+        rate-cmd (mug/get-command system :flashcard/rate)
         rating 4
         v2 (rate-cmd id v1 rating)
         {rated-event :event} (tu/blocking-fetch-command-result system v2 id)
@@ -230,8 +230,8 @@
 
 (deftest invalid-version-test
   (let [system (mug/start! flashcard-system-config)
-        create-cmd (sut/get-command system :flashcard/create)
-        rate-cmd (sut/get-command system :flashcard/rate)
+        create-cmd (mug/get-command system :flashcard/create)
+        rate-cmd (mug/get-command system :flashcard/rate)
         flashcard-init {:question "q?" :response "r" :id 1}
         v1 (create-cmd 1 nil flashcard-init)
         v2 (rate-cmd 1 v1 5)
@@ -242,7 +242,7 @@
 
 (deftest view-all-test
   (let [system (mug/start! flashcard-system-config)
-        create (sut/get-command system :flashcard/create)
+        create (mug/get-command system :flashcard/create)
         init-values (map (fn [id] {:question "q?" :response "r" :id id}) (range 10))
         _ (mapv (fn [init-value]
                   (let [version (create (:id init-value) nil init-value)]
@@ -253,8 +253,8 @@
 
 (deftest mean-aggregation-transactional-test
   (let [system (mug/start! flashcard-system-config)
-        create (sut/get-command system :flashcard/create)
-        rate (sut/get-command system :flashcard/rate)
+        create (mug/get-command system :flashcard/create)
+        rate (mug/get-command system :flashcard/rate)
 
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
         _ (is (tu/blocking-fetch-command-result system v1 1))
@@ -273,8 +273,8 @@
 
 (deftest mean-aggregation-async-test
   (let [system (mug/start! flashcard-system-config)
-        create (sut/get-command system :flashcard/create)
-        rate (sut/get-command system :flashcard/rate)
+        create (mug/get-command system :flashcard/create)
+        rate (mug/get-command system :flashcard/rate)
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
         _ (is (nil? (sut/fetch-aggregation system :flashcard/mean-async 1 v1)))
         v2 (rate 1 v1 5)
