@@ -236,6 +236,7 @@
         v1 (create-cmd 1 nil flashcard-init)
         v2 (rate-cmd 1 v1 5)
         result (tu/blocking-fetch-command-result system (rate-cmd 1 v1 3) 1)]
+    (is (contains? result :error))
     (is (= v2 (get-in result [:error :details :actual])))
     (is (= v1 (get-in result [:error :details :expected])))))
 
