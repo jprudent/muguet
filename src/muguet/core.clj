@@ -9,6 +9,7 @@
   (xt/listen (:node system) {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
              (fn [xt-event] (prn "====Tx commited:" xt-event)))
   system)
+
 (defn start!
   [system]
   ;; start logging
@@ -26,6 +27,10 @@
       (catch Exception e (.close node) (throw e)))))
 
 (defn build-event
+  "Returns an interceptor that can attach an event to the context.
+  `event-body-fn` is a function that takes the interceptor context and returns the body used for the event.
+  The context is made of :aggregate-system, :aggregate-name, :aggregate-id, :stream-version, :command-params
+    and anything else added to the context by previous interceptors."
   [type event-body-fn]
   {:name "build-event"
    :enter (fn ^{:doc "interceptor that build and add an event to the context"}
@@ -37,7 +42,8 @@
 (defn get-command [system command-name]
   (get-in system [:commands command-name]))
 
-(defn command
+(defn exec-command
+  "Execute the command-name."
   [system command-name aggregate-id version command-arg]
   (if-let [command (get-command system command-name)]
     (command aggregate-id version command-arg)

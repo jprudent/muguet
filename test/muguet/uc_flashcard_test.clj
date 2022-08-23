@@ -300,7 +300,7 @@
                                        {:doc "A transactional aggregation that can throw exceptions"
                                         :evolve `evolve-broken
                                         :schema nil}))
-          v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+          v1 (mug/exec-command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
           result (tu/blocking-fetch-command-result system v1 1)]
       (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
               ::muga/command-status ::muga/complete} result))
@@ -313,7 +313,7 @@
                                       :evolve `evolve-broken
                                       :schema nil
                                       :async true}))
-        v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+        v1 (mug/exec-command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
         result-v1 (tu/blocking-fetch-command-result system v1 1)
         aggregate (sut/fetch-aggregation system :flashcard/aggregate 1 v1)
         expected-error {:details {:aggregation nil
@@ -343,7 +343,7 @@
            (update (sut/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
         "Instead of the aggregation, an error document is stored.")
 
-    (let [v2 (mug/command system :flashcard/rate 1 v1 5)
+    (let [v2 (mug/exec-command system :flashcard/rate 1 v1 5)
           result-v2 (tu/blocking-fetch-command-result system v2 1)]
 
       (is (= :flashcard/rated (get-in result-v2 [:event :type])))
@@ -378,8 +378,8 @@
         #_#__ (xt/listen (:node system) {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
                          (fn [xt-event] (prn "====Tx commited:" xt-event)))
         _ (reset! recompute-init 0)
-        v1 (mug/command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
-        v2 (mug/command system :flashcard/rate 1 v1 5)
+        v1 (mug/exec-command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
+        v2 (mug/exec-command system :flashcard/rate 1 v1 5)
         _result (tu/blocking-fetch-command-result system v2 1)
         aggregation (sut/fetch-aggregation system :flashcard/recompute-tx 1 v2)]
     (is (= 2 (:counter aggregation)))
