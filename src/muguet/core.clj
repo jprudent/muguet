@@ -1,6 +1,7 @@
 (ns muguet.core
   ;; todo write a meaningful documentation of this namespace
   (:require [muguet.internals.commands :as mug-cmd]
+            [muguet.internals.db :as mug-db]
             [muguet.internals.meta-schemas :as meta]
             [xtdb.api :as xt]))
 
@@ -49,6 +50,19 @@
     (command aggregate-id version command-arg)
     (throw (ex-info (str command-name " doesn't exist.") {:command-name command-name
                                                           :system system}))))
+
+;; fixme introduct an aggregate "coordinate" with id and version. That will save an arity and avoid arg misplacements #truestory
+(defn fetch-aggregation
+  "Fetch the aggregation at version. Returns nil if id doesn't exist or if
+  aggregation doesn't match version."
+  [system aggregation-name id version]
+  ;; todo check the aggregation-name exists
+  (when-not (-> system :aggregations aggregation-name)
+    (throw (ex-info (str aggregation-name "doesn't exist")
+                    {:aggregation-name aggregation-name
+                     :valid-aggregations (keys (:aggregations system))})))
+  (mug-db/fetch-aggregation-version system aggregation-name id version))
+
 (defn recompute-aggregation
   "One would need to recompute an aggregation to fix a bug, or simply to change
   the schema. This will evolve all aggregates with all events from the dawn of time.

@@ -265,13 +265,6 @@
   (db/listen-events system #(xt/submit-tx (:node system) [[::xt/fn :update-async-aggregations %]]))
   system)
 
-
-;; fixme introduct an aggregate "coordinate" with id and version. That will save an arity and avoid arg misplacements #truestory
-(defn fetch-aggregation
-  [system aggregation-name id version]
-  ;; todo check the aggregation-name exists
-  (db/fetch-aggregation-version system aggregation-name id version))
-
 (defn recompute-aggregation
   ;; fixme because I know that users will fuck up the "do this offline", we need
   ;;   an application flag to put it read only. OR we need a smart CAS

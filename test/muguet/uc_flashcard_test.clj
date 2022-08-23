@@ -6,7 +6,6 @@
             [malli.util :as mu]
             [muguet.api :as muga]
             [muguet.core :as mug]
-            [muguet.internals.commands :as sut]
             [muguet.internals.db :as db]
             [muguet.internals.views :as views]
             [muguet.test-utils :as tu]
@@ -150,7 +149,7 @@
         flashcard-init {:question "q?" :response "r" :id id}
         v1 (create-cmd id nil flashcard-init)
         {:keys [event ::muga/command-status]} (tu/blocking-fetch-command-result system v1 id)
-        aggregate (sut/fetch-aggregation system :flashcard/aggregate 1 v1)
+        aggregate (mug/fetch-aggregation system :flashcard/aggregate 1 v1)
         expected-event {:type :flashcard/created
                         :aggregate-id id
                         :body flashcard-init}]
@@ -218,7 +217,7 @@
         rating 4
         v2 (rate-cmd id v1 rating)
         {rated-event :event} (tu/blocking-fetch-command-result system v2 id)
-        fc-rated (sut/fetch-aggregation system :flashcard/aggregate id v2)]
+        fc-rated (mug/fetch-aggregation system :flashcard/aggregate id v2)]
     (is (= {:type :flashcard/rated
             :aggregate-id id
             :body rating}
@@ -259,34 +258,34 @@
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
         _ (is (tu/blocking-fetch-command-result system v1 1))
         _ (is (= {:number 0 :sum 0}
-                 (dissoc (sut/fetch-aggregation system :flashcard/mean-transactional 1 v1) :stream-version)))
+                 (dissoc (mug/fetch-aggregation system :flashcard/mean-transactional 1 v1) :stream-version)))
 
         v2 (rate 1 v1 5)
         _ (tu/blocking-fetch-command-result system v2 1)
         _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
-                 (sut/fetch-aggregation system :flashcard/mean-transactional 1 v2)))
+                 (mug/fetch-aggregation system :flashcard/mean-transactional 1 v2)))
 
         v3 (rate 1 v2 0)
         _ (tu/blocking-fetch-command-result system v3 1)
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
-                 (sut/fetch-aggregation system :flashcard/mean-transactional 1 v3)))]))
+                 (mug/fetch-aggregation system :flashcard/mean-transactional 1 v3)))]))
 
 (deftest mean-aggregation-async-test
   (let [system (mug/start! flashcard-system-config)
         create (mug/get-command system :flashcard/create)
         rate (mug/get-command system :flashcard/rate)
         v1 (create 1 nil {:question "q?" :response "r" :id 1})
-        _ (is (nil? (sut/fetch-aggregation system :flashcard/mean-async 1 v1)))
+        _ (is (nil? (mug/fetch-aggregation system :flashcard/mean-async 1 v1)))
         v2 (rate 1 v1 5)
         ;; The aggregation update gets delayed, so we wait a bit ...
         ;; todo don't use Thread/sleep
         _ (Thread/sleep 200)
         _ (is (= {:number 1 :sum 5 :mean 5.0 :stream-version v2}
-                 (sut/fetch-aggregation system :flashcard/mean-async 1 v2)))
+                 (mug/fetch-aggregation system :flashcard/mean-async 1 v2)))
         v3 (rate 1 v2 0)
         _ (Thread/sleep 200)
         _ (is (= {:number 2 :sum 5 :mean 2.5 :stream-version v3}
-                 (sut/fetch-aggregation system :flashcard/mean-async 1 v3)))]))
+                 (mug/fetch-aggregation system :flashcard/mean-async 1 v3)))]))
 
 (defn evolve-broken
   [aggregation event]
@@ -315,7 +314,7 @@
                                       :async true}))
         v1 (mug/exec-command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
         result-v1 (tu/blocking-fetch-command-result system v1 1)
-        aggregate (sut/fetch-aggregation system :flashcard/aggregate 1 v1)
+        aggregate (mug/fetch-aggregation system :flashcard/aggregate 1 v1)
         expected-error {:details {:aggregation nil
                                   :event (:event result-v1)}
                         :message "An error occurred trying to evolve the aggregation.
@@ -337,10 +336,10 @@
 
     (is (= {:number 0
             :stream-version (get-in result-v1 [:event :stream-version])
-            :sum 0} (sut/fetch-aggregation system :flashcard/mean-async 1 v1))
+            :sum 0} (mug/fetch-aggregation system :flashcard/mean-async 1 v1))
         "Other async aggregations continue to evolve")
     (is (= expected-error
-           (update (sut/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
+           (update (mug/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
         "Instead of the aggregation, an error document is stored.")
 
     (let [v2 (mug/exec-command system :flashcard/rate 1 v1 5)
@@ -354,13 +353,13 @@
       (is (= {:number 1
               :stream-version (get-in result-v2 [:event :stream-version])
               :sum 5
-              :mean 5.0} (sut/fetch-aggregation system :flashcard/mean-async 1 v2))
+              :mean 5.0} (mug/fetch-aggregation system :flashcard/mean-async 1 v2))
           "Other async aggregations continue to evolve")
 
-      (is (nil? (sut/fetch-aggregation system :flashcard/broken-async 1 v2))
+      (is (nil? (mug/fetch-aggregation system :flashcard/broken-async 1 v2))
           "There is no new version for this aggregation")
       (is (= expected-error
-             (update (sut/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
+             (update (mug/fetch-aggregation system :flashcard/broken-async 1 v1) :details dissoc :exception))
           "The aggregation is not updated and will be freezed forever."))))
 
 (def recompute-init (atom 0))
@@ -381,11 +380,11 @@
         v1 (mug/exec-command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
         v2 (mug/exec-command system :flashcard/rate 1 v1 5)
         _result (tu/blocking-fetch-command-result system v2 1)
-        aggregation (sut/fetch-aggregation system :flashcard/recompute-tx 1 v2)]
+        aggregation (mug/fetch-aggregation system :flashcard/recompute-tx 1 v2)]
     (is (= 2 (:counter aggregation)))
     (reset! recompute-init 1000)
     (mug/recompute-aggregation system :flashcard/recompute-tx)
-    (is (= 1002 (:counter (sut/fetch-aggregation system :flashcard/recompute-tx 1 v2))))))
+    (is (= 1002 (:counter (mug/fetch-aggregation system :flashcard/recompute-tx 1 v2))))))
 
 ;; todo multisystem tests`
 
