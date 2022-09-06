@@ -12,7 +12,7 @@ My key features:
 
 - I model your business with more than CRUD operations
 - I remember everything that happened, I delete nothing, I let you query the past
-- I'm declarative first but I'm hackable programmatically.
+- I'm declarative first but I don't know your business, you have to program me.
 
 About me:
 
