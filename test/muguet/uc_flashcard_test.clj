@@ -6,7 +6,6 @@
             [malli.util :as mu]
             [muguet.api :as muga]
             [muguet.core :as mug]
-            [muguet.internals.db :as db]
             [muguet.internals.views :as views]
             [muguet.test-utils :as tu]
             [muguet.utils :as mugu]
@@ -159,8 +158,7 @@
     (is (= (:stream-version event) (:stream-version aggregate)) "aggregate and events have same stream-version")
 
     ;; -- the aggregate and event can be retrieved separately from a command result
-    (is (= [event] (mug/fetch-event-history system id)))
-    (is (= event (db/fetch-last-event-version system (:stream-version event) id)))))
+    (is (= [event] (mug/fetch-event-history system id)))))
 
 (deftest already-exists-test
   (let [system (mug/start! flashcard-system-config)
@@ -302,7 +300,7 @@
           result (tu/blocking-fetch-command-result system v1 1)]
       (is (= {:error "The command failed in an unexpected manner. Check the logs for details."
               ::muga/command-status ::muga/complete} result))
-      (is (= nil (db/fetch-last-event-version system v1 1))))))
+      (is (empty? (mug/fetch-event-history system 1))))))
 
 (deftest broken-async-aggregation-test
   (let [system (mug/start! (assoc-in flashcard-system-config
@@ -326,7 +324,7 @@
                         :stream-version (get-in result-v1 [:event :stream-version])}]
     ;; the transaction succeeded
     (is (= :flashcard/created (get-in result-v1 [:event :type])))
-    (is (= (:event result-v1) (db/fetch-last-event-version system v1 1)))
+    (is (= [(:event result-v1)] (mug/fetch-event-history system 1)))
     (is (= 1 (:id aggregate)))
 
     ;; but the aggregate can't be found
