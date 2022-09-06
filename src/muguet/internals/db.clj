@@ -47,7 +47,9 @@
 
 ;; todo all this functions should support pagination and ordering
 
+
 (defn clean-doc
+  ;; fixme should not be necessary. If we remove keys why pull them in the first place ?
   "Remove purely technical attribute to have a clean API"
   [doc]
   ;; :stream-version is part of the API
@@ -62,9 +64,9 @@
   "Retrieve the all the events that have been applied on the aggregate"
   ;; todo we probably want to retrieve slices of event history to rebuild
   ;;      from snapshots.
-  [db id]
+  [system id]
   (map (fn [{:keys [:xtdb.api/doc]}] (clean-doc doc))
-       (xt/entity-history db (id->xt-last-event-id id) :asc {:with-docs? true})))
+       (xt/entity-history (xt/db (:node system)) (id->xt-last-event-id id) :asc {:with-docs? true})))
 
 (defn fetch-last-event-version
   "Fetch last event holding the version.
@@ -84,6 +86,7 @@
   [system stream-version id]
   (with-open [cursor (xt/open-entity-history (xt/db (:node system)) (id->xt-error-id id) :asc
                                              {:with-docs? true
+                                              ;; fixme should not be necessary. happens because 2 transactions happens in the same ms.
                                               :with-corrections? true
                                               :start-tx-id (:tx-id stream-version)})]
     (let [history (iterator-seq (:lazy-seq-iterator cursor))]

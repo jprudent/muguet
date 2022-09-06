@@ -72,3 +72,10 @@
   ;;   an application flag to put it read only. OR we need a smart CAS
   [system aggregation-name]
   (mug-cmd/recompute-aggregation system aggregation-name))
+
+(defn fetch-event-history
+  "Retrieve the all the events that have been applied on the aggregate"
+  ;; todo we probably want to retrieve slices of event history to rebuild
+  ;;      from snapshots.
+  [system aggregate-id]
+  (mug-db/fetch-event-history system aggregate-id))
