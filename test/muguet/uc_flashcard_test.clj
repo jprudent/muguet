@@ -10,8 +10,7 @@
             [muguet.internals.views :as views]
             [muguet.test-utils :as tu]
             [muguet.utils :as mugu]
-            [unilog.config :as log-conf]
-            [xtdb.api :as xt])
+            [unilog.config :as log-conf])
   (:import (java.time LocalDateTime)
            (java.util.concurrent CountDownLatch ExecutorService Executors)))
 
@@ -160,7 +159,7 @@
     (is (= (:stream-version event) (:stream-version aggregate)) "aggregate and events have same stream-version")
 
     ;; -- the aggregate and event can be retrieved separately from a command result
-    (is (= [event] (db/fetch-event-history (xt/db (:node system)) id)))
+    (is (= [event] (mug/fetch-event-history system id)))
     (is (= event (db/fetch-last-event-version system (:stream-version event) id)))))
 
 (deftest already-exists-test
@@ -225,7 +224,7 @@
     (is (= flashcard-init (dissoc fc-rated :due-date ::muga/document-type :stream-version)))
     (is (pos-int? (compare (:due-date fc-rated) (LocalDateTime/now))))
 
-    (is (= [created-event rated-event] (db/fetch-event-history (xt/db (:node system)) id)))))
+    (is (= [created-event rated-event] (mug/fetch-event-history system id)))))
 
 (deftest invalid-version-test
   (let [system (mug/start! flashcard-system-config)
@@ -374,8 +373,6 @@
                                      {:doc "A transactional aggregation that will be recomputed"
                                       :evolve `recompute
                                       :schema nil}))
-        #_#__ (xt/listen (:node system) {::xt/event-type ::xt/indexed-tx :with-tx-ops? true}
-                         (fn [xt-event] (prn "====Tx commited:" xt-event)))
         _ (reset! recompute-init 0)
         v1 (mug/exec-command system :flashcard/create 1 nil {:question "q?", :response "r", :id 1})
         v2 (mug/exec-command system :flashcard/rate 1 v1 5)
