@@ -1,9 +1,25 @@
 ## Muguet
 
-Muguet aims to be an opinionated framework that brings the best of data driven and domain driven worlds to build the 90%
-of applications out there.
+I'm an opinionated framework that brings the best of data driven and domain driven worlds.
 
-Status of the project: design phase
+I suite well for:
+
+- Fast prototyping: start with me, and when you know better, dump me and start over.
+- Exploration and implementation of your business domain with trials and errors
+- Rapid Application Development for non intensively used applications
+
+My key features:
+
+- I model your business with more than CRUD operations
+- I remember everything that happened, I delete nothing, I let you query the past
+- I'm declarative first but I'm hackable programmatically.
+
+About me:
+
+- I'm written in Clojure (Java API soon)
+- I use XTDB, Malli and Integrant as fundational libraries
+- I'm a framework: I go beyond providing functions, you have to go my style
+- I still don't know much about me, I'm in design phase
 
 ## Code organization
 
@@ -14,7 +30,7 @@ Namespaces `muguet.*` are meant to be public
 - `muguer.utils` contains optional various utilities
 
 Namespaces in `muguet.internals.*` contains low-level features. You shouldn't
-`require` those namespaces unless public namespaces doesn't suit you. If that's the case, please report an issue.
+`require` those namespaces.
 
 ## Tests
 

@@ -386,3 +386,5 @@
 ;; todo a command that decides multiple events
 
 ;; todo an aggregation on several aggregates
+
+;; todo events of the future
